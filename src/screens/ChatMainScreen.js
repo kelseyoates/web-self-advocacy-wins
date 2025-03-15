@@ -8,8 +8,7 @@ import {
   Image,
   ActivityIndicator,
   AccessibilityInfo,
-  Alert,
-  Platform
+  Alert
 } from 'react-native';
 import { CometChat } from '@cometchat-pro/react-native-chat';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -19,9 +18,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { isSupporterFor } from '../services/cometChat';
 import { auth } from '../config/firebase';
 import { useAccessibility } from '../context/AccessibilityContext';
-
-// Detect if running on web
-const isWeb = Platform.OS === 'web';
 
 const ChatMainScreen = ({ navigation }) => {
   const [conversations, setConversations] = useState([]);
@@ -33,30 +29,18 @@ const ChatMainScreen = ({ navigation }) => {
   const [userData, setUserData] = useState(null);
   const { showHelpers } = useAccessibility();
   const [blockedUsers, setBlockedUsers] = useState(new Set());
-  const [error, setError] = useState('');
-
-  // Add state for context menu on web
-  const [contextMenuOptions, setContextMenuOptions] = useState({
-    visible: false,
-    conversation: null,
-    position: { x: 0, y: 0 },
-    options: []
-  });
-
-  // Add state to track item layouts for context menu positioning
-  const [itemLayouts, setItemLayouts] = useState({});
 
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
         <View style={styles.buttonContainer}>
-          {!isWeb && <View style={styles.buttonShadow} />}
+          <View style={styles.buttonShadow} />
           <TouchableOpacity 
             onPress={() => {
               announceToScreenReader('Starting new chat');
               navigation.navigate('NewChat');
             }}
-            style={[styles.newChatButton, isWeb && styles.webButton]}
+            style={styles.newChatButton}
             accessible={true}
             accessibilityLabel="Start new chat"
             accessibilityHint="Opens screen to start a new conversation"
@@ -74,29 +58,18 @@ const ChatMainScreen = ({ navigation }) => {
 
     fetchConversations();
 
-    try {
-      CometChat.addMessageListener(
-        'CHAT_MAIN_SCREEN_MESSAGE_LISTENER',
-        new CometChat.MessageListener({
-          onTextMessageReceived: message => {
-            console.log("Message received:", message);
-            fetchConversations();
-          }
-        })
-      );
-    } catch (error) {
-      console.error("Error adding CometChat message listener:", error);
-      if (isWeb) {
-        setError("There was an issue connecting to the chat service. Some features may be limited.");
-      }
-    }
+    CometChat.addMessageListener(
+      'CHAT_MAIN_SCREEN_MESSAGE_LISTENER',
+      new CometChat.MessageListener({
+        onTextMessageReceived: message => {
+          console.log("Message received:", message);
+          fetchConversations();
+        }
+      })
+    );
 
     return () => {
-      try {
-        CometChat.removeMessageListener('CHAT_MAIN_SCREEN_MESSAGE_LISTENER');
-      } catch (error) {
-        console.error("Error removing CometChat message listener:", error);
-      }
+      CometChat.removeMessageListener('CHAT_MAIN_SCREEN_MESSAGE_LISTENER');
     };
   }, [navigation]);
 
@@ -236,17 +209,13 @@ const ChatMainScreen = ({ navigation }) => {
   }, []);
 
   const announceToScreenReader = (message) => {
-    if (isScreenReaderEnabled && !isWeb) {
+    if (isScreenReaderEnabled) {
       AccessibilityInfo.announceForAccessibility(message);
-    } else if (isWeb && isScreenReaderEnabled) {
-      // For web with screen readers, we could use ARIA live regions
-      setError(message);
     }
   };
 
   const fetchConversations = async () => {
     setLoading(true);
-    setError('');
     announceToScreenReader('Loading conversations');
     try {
       const conversationsRequest = new CometChat.ConversationsRequestBuilder()
@@ -255,12 +224,10 @@ const ChatMainScreen = ({ navigation }) => {
 
       const conversationList = await conversationsRequest.fetchNext();
       console.log("Conversations list received:", conversationList);
-      setConversations(conversationList || []);
-      announceToScreenReader(`Loaded ${conversationList ? conversationList.length : 0} conversations`);
+      setConversations(conversationList);
+      announceToScreenReader(`Loaded ${conversationList.length} conversations`);
     } catch (error) {
-      console.error("Error fetching conversations:", error);
       announceToScreenReader('Failed to load conversations');
-      setError('Failed to load conversations. Please try again later.');
     } finally {
       setLoading(false);
     }
@@ -481,51 +448,6 @@ const ChatMainScreen = ({ navigation }) => {
     }Last message: ${lastMessage}`;
 
     const handleLongPress = () => {
-      if (isWeb) {
-        // For web, show a more web-friendly context menu
-        setContextMenuOptions({
-          visible: true,
-          conversation: item,
-          position: { x: 0, y: 0 }, // This will be updated by the onLayout event
-          options: isGroup ? [
-            { label: 'Delete Conversation', action: () => deleteConversation(item) }
-          ] : [
-            { label: 'Delete Conversation', action: () => deleteConversation(item) },
-            { 
-              label: blockedUsers.has(item.conversationWith.uid) ? 'Unblock User' : 'Block User', 
-              action: async () => {
-                try {
-                  if (blockedUsers.has(item.conversationWith.uid)) {
-                    await CometChat.unblockUsers([item.conversationWith.uid]);
-                    setBlockedUsers(prev => {
-                      const newSet = new Set(prev);
-                      newSet.delete(item.conversationWith.uid);
-                      return newSet;
-                    });
-                    announceToScreenReader('User unblocked');
-                  } else {
-                    await CometChat.blockUsers([item.conversationWith.uid]);
-                    setBlockedUsers(prev => new Set([...prev, item.conversationWith.uid]));
-                    announceToScreenReader('User blocked');
-                  }
-                  setContextMenuOptions({ visible: false });
-                } catch (error) {
-                  console.error('Error blocking/unblocking user:', error);
-                  setError('Failed to block/unblock user. Please try again.');
-                  setContextMenuOptions({ visible: false });
-                }
-              }
-            },
-            { label: 'Report User', action: () => {
-              setContextMenuOptions({ visible: false });
-              handleReportUser(item.conversationWith);
-            }}
-          ]
-        });
-        return;
-      }
-
-      // For mobile, use Alert
       if (isGroup) {
         Alert.alert(
           'Delete Conversation',
@@ -587,25 +509,13 @@ const ChatMainScreen = ({ navigation }) => {
 
     return (
       <TouchableOpacity 
-        style={[styles.conversationItem, isWeb && styles.webConversationItem]}
+        style={styles.conversationItem}
         onPress={navigateToChat}
         onLongPress={handleLongPress}
-        onContextMenu={isWeb ? (e) => {
-          e.preventDefault();
-          handleLongPress();
-        } : undefined}
         accessible={true}
-        accessibilityLabel={`${accessibilityLabel}. ${isWeb ? 'Right click' : 'Long press'} to see more options`}
-        accessibilityHint={isWeb ? "Click to open conversation, right click for more options" : "Double tap to open conversation, double tap and hold to see more options"}
+        accessibilityLabel={`${accessibilityLabel}. Long press to delete conversation`}
+        accessibilityHint="Double tap to open conversation, double tap and hold to delete"
         accessibilityRole="button"
-        onLayout={isWeb ? (event) => {
-          // Store the layout for context menu positioning
-          const { x, y, width, height } = event.nativeEvent.layout;
-          setItemLayouts(prev => ({
-            ...prev,
-            [item.conversationId]: { x, y, width, height }
-          }));
-        } : undefined}
       >
         <View style={styles.avatarContainer}>
           <Image 
@@ -613,7 +523,7 @@ const ChatMainScreen = ({ navigation }) => {
               (groupIcon ? { uri: groupIcon } : require('../../assets/megaphone.png')) : 
               { uri: users[conversationId]?.profilePicture || 'https://www.gravatar.com/avatar' }
             }
-            style={[styles.avatar, isWeb && styles.webAvatar]}
+            style={styles.avatar}
             accessible={true}
             accessibilityLabel={`${name}'s profile picture`}
             accessibilityRole="image"
@@ -625,11 +535,10 @@ const ChatMainScreen = ({ navigation }) => {
           accessibilityElementsHidden={true}
           importantForAccessibility="no-hide-descendants"
         >
-          <Text style={[styles.userName, isWeb && styles.webUserName]}>{name || 'Unknown'}</Text>
+          <Text style={styles.userName}>{name || 'Unknown'}</Text>
           <Text style={[
             styles.lastMessage, 
-            blockedUsers.has(item.lastMessage?.sender?.uid) && styles.hiddenMessage,
-            isWeb && styles.webLastMessage
+            blockedUsers.has(item.lastMessage?.sender?.uid) && styles.hiddenMessage
           ]} numberOfLines={1}>
             {lastMessage}
           </Text>
@@ -637,7 +546,7 @@ const ChatMainScreen = ({ navigation }) => {
         
         {supporterAccess[conversationId] && (
           <View 
-            style={[styles.supporterBadge, isWeb && styles.webSupporterBadge]}
+            style={styles.supporterBadge}
             accessible={true}
             accessibilityElementsHidden={true}
           >
@@ -648,104 +557,24 @@ const ChatMainScreen = ({ navigation }) => {
     );
   };
 
-  // Render context menu for web
-  const renderContextMenu = () => {
-    if (!isWeb || !contextMenuOptions.visible || !contextMenuOptions.conversation) {
-      return null;
-    }
-
-    const layout = itemLayouts[contextMenuOptions.conversation.conversationId];
-    if (!layout) return null;
-
-    return (
-      <View 
-        style={[
-          styles.contextMenu,
-          {
-            position: 'absolute',
-            top: layout.y + layout.height,
-            left: layout.x + layout.width / 2,
-          }
-        ]}
-      >
-        {contextMenuOptions.options.map((option, index) => (
-          <TouchableOpacity 
-            key={index}
-            style={styles.contextMenuItem}
-            onPress={() => {
-              option.action();
-              setContextMenuOptions({ visible: false });
-            }}
-          >
-            <Text style={styles.contextMenuItemText}>{option.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  };
-
-  // Close context menu when clicking outside
-  useEffect(() => {
-    if (isWeb && contextMenuOptions.visible) {
-      const handleClickOutside = () => {
-        setContextMenuOptions({ visible: false });
-      };
-      
-      document.addEventListener('click', handleClickOutside);
-      return () => {
-        document.removeEventListener('click', handleClickOutside);
-      };
-    }
-  }, [isWeb, contextMenuOptions.visible]);
-
-  const renderErrorMessage = () => {
-    if (error) {
-      return (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity 
-            style={styles.retryButton}
-            onPress={fetchConversations}
-          >
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-    return null;
-  };
-
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View 
+        style={styles.centerContainer}
+        accessible={true}
+        accessibilityLabel="Loading conversations"
+      >
         <ActivityIndicator size="large" color="#24269B" />
-        <Text style={styles.loadingText}>Loading conversations...</Text>
-      </View>
-    );
-  }
-
-  if (conversations.length === 0 && !loading) {
-    return (
-      <View style={styles.emptyContainer}>
-        {renderErrorMessage()}
-        <Text style={styles.emptyText}>No conversations yet</Text>
-        <Text style={styles.emptySubText}>Start a new chat to begin messaging</Text>
-        <TouchableOpacity 
-          style={[styles.startChatButton, isWeb && styles.webStartChatButton]}
-          onPress={() => {
-            announceToScreenReader('Starting new chat');
-            navigation.navigate('NewChat');
-          }}
-        >
-          <Text style={styles.startChatButtonText}>Start a new chat</Text>
-        </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {renderErrorMessage()}
+    <View 
+      style={styles.container}
+      accessible={true}
+      accessibilityLabel="Chat conversations"
+    >
       <FlatList
         ListHeaderComponent={() => (
           <>
@@ -840,14 +669,14 @@ const ChatMainScreen = ({ navigation }) => {
       />
       
       <TouchableOpacity
-        style={[styles.fab, isWeb && styles.webFab]}
+        style={styles.fab}
         onPress={() => {
           announceToScreenReader('Starting new chat');
           navigation.navigate('NewChat');
         }}
         accessible={true}
         accessibilityLabel="New Chat"
-        accessibilityHint={isWeb ? "Click to start a new conversation" : "Double tap to start a new conversation"}
+        accessibilityHint="Double tap to start a new conversation"
         accessibilityRole="button"
       >
         <View style={styles.fabContent}>
@@ -855,8 +684,6 @@ const ChatMainScreen = ({ navigation }) => {
           <Text style={styles.fabText}>New Chat</Text>
         </View>
       </TouchableOpacity>
-
-      {renderContextMenu()}
     </View>
   );
 };
@@ -1106,132 +933,6 @@ const styles = StyleSheet.create({
   hiddenMessage: {
     fontStyle: 'italic',
     color: '#999',
-  },
-  webConversationItem: {
-    cursor: 'pointer',
-    transition: 'background-color 0.2s ease',
-    ':hover': {
-      backgroundColor: '#f5f5f5',
-    },
-    borderRadius: 8,
-    margin: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  webAvatar: {
-    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-  },
-  webUserName: {
-    fontSize: 18,
-  },
-  webLastMessage: {
-    fontSize: 14,
-  },
-  webSupporterBadge: {
-    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-  },
-  webButton: {
-    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-    cursor: 'pointer',
-    transition: 'background-color 0.3s ease',
-    ':hover': {
-      backgroundColor: '#f0f0f0',
-    },
-  },
-  webFab: {
-    cursor: 'pointer',
-    boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)',
-    transition: 'background-color 0.3s ease',
-    ':hover': {
-      backgroundColor: '#1a1c7a',
-    },
-  },
-  webStartChatButton: {
-    cursor: 'pointer',
-    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-    transition: 'background-color 0.3s ease',
-    ':hover': {
-      backgroundColor: '#1a1c7a',
-    },
-  },
-  webListContent: {
-    paddingBottom: 100,
-    maxWidth: 800,
-    marginHorizontal: 'auto',
-    width: '100%',
-  },
-  contextMenu: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-    zIndex: 1000,
-    minWidth: 180,
-    overflow: 'hidden',
-  },
-  contextMenuItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  contextMenuItemText: {
-    fontSize: 14,
-  },
-  errorContainer: {
-    backgroundColor: '#ffebee',
-    borderRadius: 8,
-    padding: 16,
-    marginVertical: 10,
-    marginHorizontal: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#f44336',
-  },
-  errorText: {
-    color: '#d32f2f',
-    fontSize: 14,
-    marginBottom: 10,
-  },
-  retryButton: {
-    backgroundColor: '#24269B',
-    borderRadius: 4,
-    padding: 8,
-    alignSelf: 'flex-end',
-  },
-  retryButtonText: {
-    color: 'white',
-    fontSize: 14,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    color: '#24269B',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginTop: 10,
-  },
-  emptySubText: {
-    color: '#666',
-    fontSize: 14,
-    textAlign: 'center',
-    marginVertical: 10,
-  },
-  startChatButton: {
-    backgroundColor: '#24269B',
-    borderRadius: 4,
-    padding: 8,
-    alignSelf: 'flex-end',
-  },
-  startChatButtonText: {
-    color: 'white',
-    fontSize: 14,
   },
 });
 

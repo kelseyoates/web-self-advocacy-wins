@@ -13,19 +13,13 @@ import {
   Keyboard,
   Dimensions,
   ScrollView,
-  AccessibilityInfo,
-  ActivityIndicator
+  AccessibilityInfo
 } from 'react-native';
 import { CometChat } from '@cometchat-pro/react-native-chat';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import * as ImagePicker from 'expo-image-picker';
-import { auth } from '../config/firebase';
-import { COMETCHAT_CONSTANTS } from '../config/cometChatConfig';
-
-// Detect if running on web
-const isWeb = Platform.OS === 'web';
 
 const containsProfanity = (text) => {
   const profanityList = [
@@ -78,16 +72,10 @@ const ChatConversationScreen = ({ route, navigation }) => {
   const [hasShownBlockAlert, setHasShownBlockAlert] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [isCheckingBlock, setIsCheckingBlock] = useState(true);
-  const [error, setError] = useState('');
-  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
-  const [contextMenuVisible, setContextMenuVisible] = useState(false);
-  const [selectedMessage, setSelectedMessage] = useState(null);
 
   // Fetch initial messages
   const fetchMessages = useCallback(async () => {
     try {
-      setIsLoading(true);
-      setError('');
       console.log("Fetching messages for:", uid);
       const messagesRequest = new CometChat.MessagesRequestBuilder()
         .setUID(uid)
@@ -115,10 +103,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
         }
       });
     } catch (error) {
-      console.error("Error fetching messages:", error);
-      setError("Failed to load messages. Please try again.");
-    } finally {
-      setIsLoading(false);
+      console.log("Error fetching messages:", error);
     }
   }, [uid]);
 
@@ -174,187 +159,123 @@ const ChatConversationScreen = ({ route, navigation }) => {
     };
   }, [uid]);
 
-  const initializeChat = async () => {
-    try {
-      setIsLoading(true);
-      setError('');
-      
-      // Check if user is logged in to CometChat
-      const loggedInUser = await CometChat.getLoggedinUser();
-      
-      if (!loggedInUser) {
-        console.log("No user logged in to CometChat, attempting login");
-        
-        try {
-          // Get current Firebase user
-          const currentUser = auth.currentUser;
-          if (!currentUser) {
-            throw new Error("No Firebase user found");
-          }
-          
-          // Login to CometChat
-          await CometChat.login(currentUser.uid.toLowerCase(), COMETCHAT_CONSTANTS.AUTH_KEY);
-          console.log("CometChat login successful");
-        } catch (loginError) {
-          console.error("CometChat login error:", loginError);
-          
-          if (isWeb) {
-            setError("There was an issue connecting to the chat service. Some features may be limited. You can still view messages.");
-            // Continue anyway - we'll still try to fetch messages
-          } else {
-            throw loginError; // For mobile, propagate the error
-          }
-        }
-      }
-      
-      // Set current user
-      setCurrentUser(loggedInUser || { uid: auth.currentUser?.uid.toLowerCase() });
-      
-      // Fetch messages
-      await fetchMessages();
-      
-      // Add message listener
-      try {
-        CometChat.addMessageListener(
-          `MESSAGE_LISTENER_${uid}`,
-          new CometChat.MessageListener({
-            onTextMessageReceived: message => {
-              console.log("Text message received:", message);
-              if (message.sender.uid !== auth.currentUser?.uid.toLowerCase() && 
-                  message.receiverId === auth.currentUser?.uid.toLowerCase()) {
-                setMessages(prev => [...prev, message]);
-                
-                // Get smart replies for the received message
-                getSmartReplies(message);
-                
-                // Scroll to bottom
-                if (flatListRef.current) {
-                  flatListRef.current.scrollToEnd({ animated: true });
-                }
-              }
-            },
-            onMediaMessageReceived: message => {
-              console.log("Media message received:", message);
-              if (message.sender.uid !== auth.currentUser?.uid.toLowerCase() && 
-                  message.receiverId === auth.currentUser?.uid.toLowerCase()) {
-                setMessages(prev => [...prev, message]);
-                
-                // Scroll to bottom
-                if (flatListRef.current) {
-                  flatListRef.current.scrollToEnd({ animated: true });
-                }
-              }
-            },
-            onMessagesDelivered: messageReceipt => {
-              console.log("Message delivered:", messageReceipt);
-            },
-            onMessagesRead: messageReceipt => {
-              console.log("Message read:", messageReceipt);
-            },
-            onMessageDeleted: message => {
-              console.log("Message deleted:", message);
-              setMessages(prev => prev.filter(m => m.id !== message.id));
-            }
-          })
-        );
-      } catch (listenerError) {
-        console.error("Error adding message listener:", listenerError);
-        if (isWeb) {
-          setError("There was an issue with the chat connection. Messages may not update in real-time.");
-        }
-      }
-      
-      // Set navigation header
-      setNavigationHeader();
-      
-      // Check block status
-      await checkBlockStatus();
-    } catch (error) {
-      console.error("Error initializing chat:", error);
-      
-      if (isWeb) {
-        // For web, show error but don't prevent viewing messages
-        setError("There was an issue connecting to the chat service. Some features may be limited.");
-        
-        // Try to fetch messages anyway
-        try {
-          await fetchMessages();
-        } catch (fetchError) {
-          console.error("Error fetching messages after initialization error:", fetchError);
-          setError("Failed to load messages. Please try refreshing the page.");
-        }
-      } else {
-        // For mobile, show alert
-        Alert.alert(
-          'Connection Error',
-          'Failed to connect to the chat service. Please try again later.',
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
-        );
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Initialize message moderation
   useEffect(() => {
-    const checkScreenReader = async () => {
+    const initializeChat = async () => {
       try {
-        const screenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
-        setIsScreenReaderEnabled(screenReaderEnabled);
+        setIsCheckingBlock(true);
+        const isUserBlocked = await getBlockStatus();
+        console.log('Initial block status:', isUserBlocked);
+        setIsBlocked(isUserBlocked);
+        
+        if (isUserBlocked) {
+          if (!hasShownBlockAlert) {
+            setHasShownBlockAlert(true);
+            Alert.alert(
+              'User Blocked',
+              'You have blocked this user. Would you like to unblock them to continue chatting?',
+              [
+                {
+                  text: 'Keep Blocked',
+                  style: 'cancel',
+                  onPress: () => navigation.goBack()
+                },
+                {
+                  text: 'Unblock',
+                  onPress: async () => {
+                    try {
+                      await CometChat.unblockUsers([uid]);
+                      const newBlockStatus = await getBlockStatus();
+                      setIsBlocked(newBlockStatus);
+                      setHasShownBlockAlert(false);
+                      
+                      if (!newBlockStatus) {
+                        Alert.alert(
+                          'User Unblocked',
+                          'You can now chat with this user.',
+                          [{ text: 'OK' }]
+                        );
+                        const user = await CometChat.getLoggedinUser();
+                        setCurrentUser(user);
+                        await fetchMessages();
+                      } else {
+                        Alert.alert('Error', 'User is still blocked. Please try again.');
+                      }
+                    } catch (error) {
+                      console.error('Error unblocking user:', error);
+                      Alert.alert('Error', 'Failed to unblock user. Please try again.');
+                    }
+                  }
+                }
+              ]
+            );
+          }
+          return; // Don't load messages if blocked
+        }
+
+        // Only load messages if not blocked
+        const user = await CometChat.getLoggedinUser();
+        setCurrentUser(user);
+        await fetchMessages();
       } catch (error) {
-        console.log('Error checking screen reader:', error);
+        console.error("Initialization error:", error);
+      } finally {
+        setIsCheckingBlock(false);
       }
     };
-
-    checkScreenReader();
-    
-    let subscription;
-    try {
-      subscription = AccessibilityInfo.addEventListener(
-        'screenReaderChanged',
-        setIsScreenReaderEnabled
-      );
-    } catch (error) {
-      console.log('Error setting up accessibility listener:', error);
-    }
 
     initializeChat();
     
-    // Cleanup function
     return () => {
-      if (subscription && subscription.remove) {
-        subscription.remove();
-      }
-      
-      // Remove message listener
-      try {
-        CometChat.removeMessageListener(`MESSAGE_LISTENER_${uid}`);
-        console.log("Message listener removed");
-      } catch (error) {
-        console.error("Error removing message listener:", error);
-      }
+      setHasShownBlockAlert(false);
     };
-  }, [navigation, uid, name]);
+  }, [uid]);
+
+  // Initialize message moderation
+  useEffect(() => {
+    // Set up message listener with moderation
+    const listenerID = "MODERATION_LISTENER_" + Date.now();
+    
+    CometChat.addMessageListener(
+      listenerID,
+      new CometChat.MessageListener({
+        onTextMessageReceived: message => {
+          console.log("Message received:", message);
+        },
+        onMessageDeleted: message => {
+          console.log("Message deleted:", message);
+          // Remove deleted message from state
+          setMessages(prev => prev.filter(m => m.id !== message.id));
+        }
+      })
+    );
+
+    return () => {
+      CometChat.removeMessageListener(listenerID);
+    };
+  }, []);
+
+  // Add screen reader detection
+  useEffect(() => {
+    const checkScreenReader = async () => {
+      const screenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
+      setIsScreenReaderEnabled(screenReaderEnabled);
+    };
+
+    checkScreenReader();
+    const subscription = AccessibilityInfo.addEventListener(
+      'screenReaderChanged',
+      setIsScreenReaderEnabled
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   // Add screen reader announcement helper
   const announceToScreenReader = (message) => {
-    if (isScreenReaderEnabled && !isWeb) {
+    if (isScreenReaderEnabled) {
       AccessibilityInfo.announceForAccessibility(message);
-    } else if (isWeb && isScreenReaderEnabled) {
-      // For web with screen readers, we could use ARIA live regions
-      setError(message);
-    }
-  };
-
-  const showAlert = (title, message, buttons) => {
-    if (isWeb) {
-      // For web, use a more web-friendly approach
-      setError(message);
-      // You could also use a modal or toast component here
-    } else {
-      // For mobile, use Alert
-      Alert.alert(title, message, buttons || [{ text: 'OK' }]);
     }
   };
 
@@ -466,145 +387,115 @@ const ChatConversationScreen = ({ route, navigation }) => {
 
   const handleMediaPicker = async () => {
     try {
-      if (isWeb) {
-        // Web-specific file picker
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.accept = 'image/*';
-        
-        fileInput.onchange = async (e) => {
-          const file = e.target.files[0];
-          if (!file) return;
-          
-          setIsUploading(true);
-          announceToScreenReader('Uploading image');
-          
-          try {
-            // Create a unique file name
-            const fileName = `${Date.now()}_${file.name}`;
-            
-            // Create a CometChat media message
-            const receiverID = uid;
-            const messageType = CometChat.MESSAGE_TYPE.IMAGE;
-            const receiverType = CometChat.RECEIVER_TYPE.USER;
-            
-            // For web, we need to convert the file to a blob URL
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-              const blob = new Blob([event.target.result], { type: file.type });
-              
-              // Create a media message with the blob
-              const mediaMessage = new CometChat.MediaMessage(
-                receiverID,
-                blob,
-                messageType,
-                receiverType
-              );
-              
-              // Set some metadata
-              mediaMessage.setMetadata({
-                fileName: fileName,
-                fileType: file.type,
-                fileSize: file.size
-              });
-              
-              try {
-                // Send the message
-                const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
-                console.log("Media message sent successfully:", sentMessage);
-                
-                // Add the message to the list
-                setMessages(prevMessages => [...prevMessages, sentMessage]);
-                
-                // Scroll to the bottom
-                if (flatListRef.current) {
-                  flatListRef.current.scrollToEnd({ animated: true });
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant media library permissions to attach media.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7,
+        allowsEditing: true,
+      });
+
+      if (!result.canceled) {
+        setIsUploading(true);
+        const asset = result.assets[0];
+        console.log("Selected media:", asset);
+
+        try {
+          const file = {
+            name: asset.fileName || `image_${Date.now()}.jpg`,
+            type: asset.mimeType || 'image/jpeg',
+            uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
+            size: asset.fileSize
+          };
+
+          const mediaMessage = new CometChat.MediaMessage(
+            uid,
+            file,
+            CometChat.MESSAGE_TYPE.IMAGE,
+            CometChat.RECEIVER_TYPE.USER
+          );
+
+          mediaMessage.setMetadata({
+            "extensions": {
+              "moderation": {
+                "enabled": true,
+                "image": {
+                  "enabled": true,
+                  "action": "block",
+                  "severity": "high"
                 }
-                
-                announceToScreenReader('Image sent');
-              } catch (error) {
-                console.error("Error sending media message:", error);
-                setError("Failed to send image. Please try again.");
-                announceToScreenReader('Failed to send image');
-              } finally {
-                setIsUploading(false);
               }
-            };
-            
-            reader.readAsArrayBuffer(file);
-          } catch (error) {
-            console.error("Error processing file:", error);
-            setError("Failed to process image. Please try again.");
-            setIsUploading(false);
-            announceToScreenReader('Failed to process image');
-          }
-        };
-        
-        // Trigger the file input click
-        fileInput.click();
-      } else {
-        // Mobile image picker
-        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        
-        if (permissionResult.granted === false) {
-          Alert.alert('Permission Required', 'You need to grant permission to access your photos');
-          return;
-        }
-        
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          quality: 0.8,
-        });
-        
-        if (!result.canceled && result.assets && result.assets.length > 0) {
-          const selectedImage = result.assets[0];
-          setIsUploading(true);
-          announceToScreenReader('Uploading image');
-          
-          try {
-            // Create a unique file name
-            const uri = selectedImage.uri;
-            const fileExtension = uri.split('.').pop();
-            const fileName = `${Date.now()}.${fileExtension}`;
-            
-            // Create a CometChat media message
-            const receiverID = uid;
-            const messageType = CometChat.MESSAGE_TYPE.IMAGE;
-            const receiverType = CometChat.RECEIVER_TYPE.USER;
-            
-            const mediaMessage = new CometChat.MediaMessage(
-              receiverID,
-              uri,
-              messageType,
-              receiverType
-            );
-            
-            // Send the message
-            const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
-            console.log("Media message sent successfully:", sentMessage);
-            
-            // Add the message to the list
-            setMessages(prevMessages => [...prevMessages, sentMessage]);
-            
-            // Scroll to the bottom
-            if (flatListRef.current) {
-              flatListRef.current.scrollToEnd({ animated: true });
             }
-            
-            announceToScreenReader('Image sent');
-          } catch (error) {
-            console.error("Error sending media message:", error);
-            Alert.alert('Error', 'Failed to send image. Please try again.');
-            announceToScreenReader('Failed to send image');
-          } finally {
-            setIsUploading(false);
+          });
+
+          console.log("Attempting to send media message:", {
+            file: file,
+            metadata: mediaMessage.metadata
+          });
+
+          const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
+          console.log("Media message response:", sentMessage);
+
+          // Check moderation response
+          if (sentMessage.metadata?.moderation?.blocked || 
+              sentMessage.metadata?.["@injected"]?.extensions?.moderation?.blocked) {
+            throw new Error("INAPPROPRIATE_CONTENT");
+          }
+
+          setMessages(prev => {
+            const newMessages = [...prev, sentMessage];
+            requestAnimationFrame(() => {
+              if (flatListRef.current) {
+                flatListRef.current.scrollToEnd({ animated: true });
+              }
+            });
+            return newMessages;
+          });
+          announceToScreenReader('Image sent successfully');
+        } catch (error) {
+          console.log("Media send error details:", error);
+          
+          // More specific error handling
+          if (error.message === "INAPPROPRIATE_CONTENT" ||
+              error.code === "ERR_CONTENT_MODERATED" ||
+              error.code === "MESSAGE_MODERATED" ||
+              error.message?.toLowerCase().includes('moderation') ||
+              error.message?.toLowerCase().includes('inappropriate')) {
+            Alert.alert(
+              'Inappropriate Content',
+              'This image appears to contain inappropriate or explicit content and cannot be sent. Please choose a different image that follows community guidelines.'
+            );
+          } else if (error.code === "ERR_FILE_SIZE_TOO_LARGE") {
+            Alert.alert(
+              'File Too Large',
+              'The image file is too large. Please choose a smaller image or compress this one.'
+            );
+          } else if (error.code === "ERR_INVALID_MEDIA_MESSAGE") {
+            Alert.alert(
+              'Invalid Image',
+              'The selected image could not be processed. Please try a different image.'
+            );
+          } else {
+            Alert.alert(
+              'Upload Error',
+              'There was a problem sending your image. Please try again.'
+            );
           }
         }
       }
     } catch (error) {
-      console.error("Error in media picker:", error);
-      showAlert('Error', 'Failed to open image picker. Please try again.');
+      console.log("Media picker error:", error);
+      Alert.alert(
+        'Error',
+        'Failed to process the image. Please try again.'
+      );
+      announceToScreenReader('Failed to send image');
+    } finally {
       setIsUploading(false);
     }
   };
@@ -636,160 +527,59 @@ const ChatConversationScreen = ({ route, navigation }) => {
   };
 
   const handleMessageLongPress = (message) => {
-    if (isWeb) {
-      // For web, we'll use a context menu
-      setSelectedMessage(message);
-      setContextMenuVisible(true);
-      return;
-    }
-
-    // For mobile, use Alert
-    const isMyMessage = message.sender?.uid === currentUser?.uid;
-    const options = [];
-
-    if (isMyMessage) {
-      options.push({
-        text: 'Delete',
-        onPress: () => handleDeleteMessage(message),
-        style: 'destructive'
-      });
-    } else {
-      if (!reportedUsers.has(message.sender?.uid)) {
-        options.push({
-          text: 'Report',
+    console.log('Long press detected on message:', message.id);
+    
+    // Only show delete option for own messages
+    const isOwnMessage = message.sender.uid === currentUser?.uid;
+    console.log('Is own message:', isOwnMessage);
+    console.log('Current user:', currentUser?.uid);
+    console.log('Message sender:', message.sender.uid);
+    
+    Alert.alert(
+      isOwnMessage ? 'Message Options' : 'Report Message',
+      isOwnMessage ? 'What would you like to do with this message?' : 'Would you like to report this message?',
+      [
+        {
+          text: isOwnMessage ? 'Delete Message' : 'Report Message',
+          style: 'destructive',
           onPress: () => {
-            Alert.alert(
-              'Report Message',
-              'Why are you reporting this message?',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Inappropriate Content', onPress: () => handleReportUser(message.sender?.uid, message.id, 'inappropriate') },
-                { text: 'Harassment', onPress: () => handleReportUser(message.sender?.uid, message.id, 'harassment') },
-                { text: 'Spam', onPress: () => handleReportUser(message.sender?.uid, message.id, 'spam') }
-              ]
-            );
-          },
-          style: 'destructive'
-        });
-      }
-
-      options.push({
-        text: isUserBlocked ? 'Unblock User' : 'Block User',
-        onPress: async () => {
-          try {
-            if (isUserBlocked) {
-              await CometChat.unblockUsers([message.sender?.uid]);
-              setIsUserBlocked(false);
-              announceToScreenReader('User unblocked');
+            if (isOwnMessage) {
+              handleDeleteMessage(message);
             } else {
-              await CometChat.blockUsers([message.sender?.uid]);
-              setIsUserBlocked(true);
-              announceToScreenReader('User blocked');
+              // Report logic
+              if (reportedUsers.has(message.sender.uid)) {
+                Alert.alert('Already Reported', 'You have already reported this user.');
+                return;
+              }
+              Alert.alert(
+                'Report Reason',
+                'Why are you reporting this message?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Inappropriate Content',
+                    onPress: () => handleReportUser(message.sender.uid, message.id, 'inappropriate_content')
+                  },
+                  {
+                    text: 'Personal Information',
+                    onPress: () => handleReportUser(message.sender.uid, message.id, 'personal_information')
+                  },
+                  {
+                    text: 'Harassment',
+                    onPress: () => handleReportUser(message.sender.uid, message.id, 'harassment')
+                  }
+                ]
+              );
             }
-          } catch (error) {
-            console.error('Error blocking/unblocking user:', error);
-            showAlert('Error', 'Failed to block/unblock user. Please try again.');
           }
         },
-        style: 'destructive'
-      });
-    }
-
-    options.unshift({ text: 'Cancel', style: 'cancel' });
-
-    Alert.alert(
-      'Message Options',
-      '',
-      options
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        }
+      ]
     );
   };
-
-  // Web-specific context menu for messages
-  const renderContextMenu = () => {
-    if (!isWeb || !contextMenuVisible || !selectedMessage) {
-      return null;
-    }
-
-    const isMyMessage = selectedMessage.sender?.uid === currentUser?.uid;
-    
-    return (
-      <View 
-        style={[
-          styles.contextMenu,
-          {
-            position: 'absolute',
-            top: contextMenuPosition.y,
-            left: contextMenuPosition.x,
-          }
-        ]}
-      >
-        {isMyMessage ? (
-          <TouchableOpacity 
-            style={styles.contextMenuItem}
-            onPress={() => {
-              handleDeleteMessage(selectedMessage);
-              setContextMenuVisible(false);
-            }}
-          >
-            <Text style={styles.contextMenuItemText}>Delete</Text>
-          </TouchableOpacity>
-        ) : (
-          <>
-            {!reportedUsers.has(selectedMessage.sender?.uid) && (
-              <TouchableOpacity 
-                style={styles.contextMenuItem}
-                onPress={() => {
-                  handleReportUser(selectedMessage.sender?.uid, selectedMessage.id, 'inappropriate');
-                  setContextMenuVisible(false);
-                }}
-              >
-                <Text style={styles.contextMenuItemText}>Report</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity 
-              style={styles.contextMenuItem}
-              onPress={async () => {
-                try {
-                  if (isUserBlocked) {
-                    await CometChat.unblockUsers([selectedMessage.sender?.uid]);
-                    setIsUserBlocked(false);
-                    announceToScreenReader('User unblocked');
-                  } else {
-                    await CometChat.blockUsers([selectedMessage.sender?.uid]);
-                    setIsUserBlocked(true);
-                    announceToScreenReader('User blocked');
-                  }
-                  setContextMenuVisible(false);
-                } catch (error) {
-                  console.error('Error blocking/unblocking user:', error);
-                  setError('Failed to block/unblock user. Please try again.');
-                  setContextMenuVisible(false);
-                }
-              }}
-            >
-              <Text style={styles.contextMenuItemText}>
-                {isUserBlocked ? 'Unblock User' : 'Block User'}
-              </Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
-    );
-  };
-
-  // Close context menu when clicking outside
-  useEffect(() => {
-    if (isWeb && contextMenuVisible) {
-      const handleClickOutside = () => {
-        setContextMenuVisible(false);
-      };
-      
-      document.addEventListener('click', handleClickOutside);
-      return () => {
-        document.removeEventListener('click', handleClickOutside);
-      };
-    }
-  }, [isWeb, contextMenuVisible]);
 
   const renderMessage = ({ item }) => {
     const isMyMessage = item.sender?.uid === currentUser?.uid;
@@ -804,20 +594,14 @@ const ChatConversationScreen = ({ route, navigation }) => {
           console.log('Long press triggered');
           handleMessageLongPress(item);
         }}
-        onContextMenu={isWeb ? (e) => {
-          e.preventDefault();
-          setContextMenuPosition({ x: e.nativeEvent.pageX, y: e.nativeEvent.pageY });
-          handleMessageLongPress(item);
-        } : undefined}
         delayLongPress={500}
         accessible={true}
-        accessibilityLabel={`${isMyMessage ? 'Your' : item.sender?.name + "'s"} message: ${item.text}. Sent at ${timestamp}. ${isWeb ? 'Right click' : 'Long press'} for options.`}
-        accessibilityHint={isWeb ? "Right click to open message options" : "Double tap and hold to open message options"}
+        accessibilityLabel={`${isMyMessage ? 'Your' : item.sender?.name + "'s"} message: ${item.text}. Sent at ${timestamp}. Long press for options.`}
+        accessibilityHint="Double tap and hold to open message options"
       >
         <View style={[
           styles.messageContainer,
-          isMyMessage ? styles.myMessage : styles.theirMessage,
-          isWeb && (isMyMessage ? styles.webMyMessage : styles.webTheirMessage)
+          isMyMessage ? styles.myMessage : styles.theirMessage
         ]}>
           {!isMyMessage && (
             <Text style={styles.senderName}>{item.sender?.name}</Text>
@@ -826,8 +610,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
           {item.type === 'text' && (
             <Text style={[
               styles.messageText,
-              isMyMessage ? styles.myMessageText : styles.theirMessageText,
-              isWeb && (isMyMessage ? styles.webMyMessageText : styles.webTheirMessageText)
+              isMyMessage ? styles.myMessageText : styles.theirMessageText
             ]}>
               {item.text}
             </Text>
@@ -836,7 +619,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
           {item.type === 'image' && (
             <Image
               source={{ uri: item.data?.url }}
-              style={[styles.messageImage, isWeb && styles.webMessageImage]}
+              style={styles.messageImage}
               resizeMode="cover"
             />
           )}
@@ -904,7 +687,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
       }
     };
 
-    initializeChat();
+    setNavigationHeader();
   }, [navigation, uid, name]);
 
   // Add this function to handle smart replies
@@ -927,6 +710,32 @@ const ChatConversationScreen = ({ route, navigation }) => {
       setIsLoadingSmartReplies(false);
     }
   };
+
+  // Update your message listener to get smart replies for the last message
+  useEffect(() => {
+    const listenerID = "CHAT_SCREEN_" + Date.now();
+    
+    CometChat.addMessageListener(
+      listenerID,
+      new CometChat.MessageListener({
+        onTextMessageReceived: message => {
+          console.log("Message received:", message);
+          setMessages(prev => [...prev, message]);
+          // Get smart replies for the received message
+          getSmartReplies(message);
+          
+          // Scroll to bottom
+          requestAnimationFrame(() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          });
+        }
+      })
+    );
+
+    return () => {
+      CometChat.removeMessageListener(listenerID);
+    };
+  }, []);
 
   // Add this function to handle smart reply selection
   const handleSmartReplyPress = async (reply) => {
@@ -1067,80 +876,6 @@ const ChatConversationScreen = ({ route, navigation }) => {
     </View>
   );
 
-  const renderErrorMessage = () => {
-    if (error) {
-      return (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity 
-            style={styles.retryButton}
-            onPress={() => {
-              setError('');
-              fetchMessages();
-            }}
-          >
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-    return null;
-  };
-
-  // Add a reconnection mechanism for web
-  useEffect(() => {
-    if (!isWeb) return;
-    
-    let reconnectInterval;
-    let reconnectAttempts = 0;
-    const MAX_RECONNECT_ATTEMPTS = 3;
-    
-    const checkConnection = async () => {
-      try {
-        const loggedInUser = await CometChat.getLoggedinUser();
-        
-        if (!loggedInUser && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-          reconnectAttempts++;
-          console.log(`Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
-          
-          try {
-            // Get current Firebase user
-            const currentUser = auth.currentUser;
-            if (!currentUser) {
-              throw new Error("No Firebase user found");
-            }
-            
-            // Login to CometChat
-            await CometChat.login(currentUser.uid.toLowerCase(), COMETCHAT_CONSTANTS.AUTH_KEY);
-            console.log("CometChat reconnection successful");
-            
-            // Refresh messages
-            await fetchMessages();
-            
-            // Clear error if successful
-            setError('');
-          } catch (loginError) {
-            console.error("CometChat reconnection error:", loginError);
-            setError("Connection lost. Attempting to reconnect...");
-          }
-        } else if (!loggedInUser && reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-          // Max attempts reached
-          setError("Unable to reconnect to chat service. Please refresh the page.");
-          clearInterval(reconnectInterval);
-        }
-      } catch (error) {
-        console.error("Error checking connection:", error);
-      }
-    };
-    
-    // Check connection every 30 seconds
-    reconnectInterval = setInterval(checkConnection, 30000);
-    
-    return () => {
-      clearInterval(reconnectInterval);
-    };
-  }, [isWeb]);
-
   if (isBlocked) {
     return (
       <View style={styles.container}>
@@ -1153,42 +888,33 @@ const ChatConversationScreen = ({ route, navigation }) => {
 
   return (
     <KeyboardAvoidingView 
-      style={[styles.container, { height: screenHeight }, isWeb && styles.webContainer]} 
+      style={[styles.container, { height: screenHeight }]} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 150 : 0}
       accessible={true}
       accessibilityLabel="Chat conversation"
     >
-      {renderErrorMessage()}
-      
-      {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#24269B" />
-          <Text style={styles.loadingText}>Loading messages...</Text>
-        </View>
-      ) : (
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={item => item.id.toString()}
-          contentContainerStyle={[styles.messageList, isWeb && styles.webMessageList]}
-          accessibilityLabel={`${messages.length} messages`}
-          accessibilityHint="Scroll to read messages"
-          onContentSizeChange={() => {
-            if (flatListRef.current) {
-              flatListRef.current.scrollToEnd({ animated: false });
-            }
-          }}
-          ListEmptyComponent={() => (
-            <Text style={styles.emptyText}>No messages yet</Text>
-          )}
-        />
-      )}
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        renderItem={renderMessage}
+        keyExtractor={item => item.id.toString()}
+        contentContainerStyle={styles.messageList}
+        accessibilityLabel={`${messages.length} messages`}
+        accessibilityHint="Scroll to read messages"
+        onContentSizeChange={() => {
+          if (flatListRef.current) {
+            flatListRef.current.scrollToEnd({ animated: false });
+          }
+        }}
+        ListEmptyComponent={() => (
+          <Text style={styles.emptyText}>No messages yet</Text>
+        )}
+      />
       
       {renderSmartReplies()}
+
       {renderInputContainer()}
-      {renderContextMenu()}
     </KeyboardAvoidingView>
   );
 };
@@ -1342,85 +1068,6 @@ const styles = StyleSheet.create({
     padding: 20,
     color: '#666',
     fontSize: 16,
-  },
-  webContainer: {
-    maxWidth: 800,
-    marginHorizontal: 'auto',
-    width: '100%',
-  },
-  webMessageList: {
-    paddingHorizontal: 20,
-  },
-  webMyMessage: {
-    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-  },
-  webTheirMessage: {
-    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-  },
-  webMyMessageText: {
-    fontSize: 16,
-  },
-  webTheirMessageText: {
-    fontSize: 16,
-  },
-  webMessageImage: {
-    maxWidth: 300,
-    cursor: 'pointer',
-  },
-  errorContainer: {
-    backgroundColor: '#ffebee',
-    borderRadius: 8,
-    padding: 16,
-    marginVertical: 10,
-    marginHorizontal: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#f44336',
-  },
-  errorText: {
-    color: '#d32f2f',
-    fontSize: 14,
-    marginBottom: 10,
-  },
-  retryButton: {
-    backgroundColor: '#24269B',
-    borderRadius: 4,
-    padding: 8,
-    alignSelf: 'flex-end',
-  },
-  retryButtonText: {
-    color: 'white',
-    fontSize: 14,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    color: '#24269B',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginTop: 10,
-  },
-  contextMenu: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-    zIndex: 1000,
-    minWidth: 180,
-    overflow: 'hidden',
-  },
-  contextMenuItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  contextMenuItemText: {
-    fontSize: 14,
   },
 });
 

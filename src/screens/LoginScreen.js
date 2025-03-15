@@ -13,16 +13,13 @@ import {
   Dimensions,
   AccessibilityInfo 
 } from 'react-native';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { CometChat } from '@cometchat-pro/react-native-chat';
 import { COMETCHAT_CONSTANTS } from '../config/cometChatConfig';
 
 const windowHeight = Dimensions.get('window').height;
-const windowWidth = Dimensions.get('window').width;
-
-// Detect if running on web
 const isWeb = Platform.OS === 'web';
 
 const LoginScreen = ({ navigation }) => {
@@ -73,14 +70,14 @@ const LoginScreen = ({ navigation }) => {
     }
   };
 
-  const showAlert = (title, message) => {
+  const showAlert = (title, message, buttons) => {
     if (isWeb) {
       // For web, use a more web-friendly approach
       setErrorMsg(message);
       // You could also use a modal or toast component here
     } else {
       // For mobile, use Alert
-      Alert.alert(title, message, [{ text: 'OK' }]);
+      Alert.alert(title, message, buttons || [{ text: 'OK' }]);
     }
   };
 
@@ -100,27 +97,26 @@ const LoginScreen = ({ navigation }) => {
       let cometChatSuccess = false;
       
       try {
-        // Attempt CometChat login for both web and mobile
         await CometChat.login(uid, COMETCHAT_CONSTANTS.AUTH_KEY);
         console.log('CometChat login successful');
         cometChatSuccess = true;
       } catch (cometChatError) {
         console.error('CometChat login error:', cometChatError);
-        
-        if (isWeb) {
-          // On web, show a warning but continue
-          console.log('CometChat login failed on web, but continuing with app navigation');
-          setErrorMsg('Login successful, but chat features might be limited. You can still use other app features.');
-        } else {
-          // On mobile, show an error alert
+        // Don't block login on web if CometChat fails
+        if (!isWeb) {
           showAlert('Login Error', 'Failed to connect to chat service. Please try again.');
-          setIsLoading(false);
-          return; // Stop the login process on mobile if CometChat fails
+          return;
         }
+      }
+      
+      if (!cometChatSuccess && isWeb) {
+        console.log('CometChat login failed on web, but continuing with app navigation');
+        setErrorMsg('Login successful, but chat features might be limited.');
       }
       
       // Navigate to main app screen
       navigation.navigate('Main');
+      
     } catch (error) {
       console.error('Login error:', error);
       
@@ -160,7 +156,6 @@ const LoginScreen = ({ navigation }) => {
     }
 
     try {
-      setIsLoading(true);
       await sendPasswordResetEmail(auth, email);
       showAlert(
         'Password Reset Email Sent',
@@ -173,14 +168,12 @@ const LoginScreen = ({ navigation }) => {
         'Error',
         'Failed to send password reset email. Please verify your email address.'
       );
-    } finally {
-      setIsLoading(false);
     }
   };
 
   return (
     <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.container}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
@@ -207,7 +200,6 @@ const LoginScreen = ({ navigation }) => {
 
           <Text 
             style={styles.title}
-            accessible={true}
             accessibilityRole="header"
           >
             Login
@@ -228,10 +220,16 @@ const LoginScreen = ({ navigation }) => {
             <View 
               style={styles.labelContainer}
               accessible={true}
-              accessibilityElementsHidden={true}
+              accessibilityRole="text"
             >
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="email-outline" size={24} color="#000000" />
+                <MaterialCommunityIcons 
+                  name="email-outline" 
+                  size={24} 
+                  color="#000000" 
+                  accessibilityElementsHidden={true}
+                  importantForAccessibility="no"
+                />
               </View>
               <Text style={styles.formLabel}>Email:</Text>
             </View>
@@ -251,10 +249,16 @@ const LoginScreen = ({ navigation }) => {
             <View 
               style={styles.labelContainer}
               accessible={true}
-              accessibilityElementsHidden={true}
+              accessibilityRole="text"
             >
               <View style={styles.iconContainer}>
-                <MaterialCommunityIcons name="lock-outline" size={24} color="#000000" />
+                <MaterialCommunityIcons 
+                  name="lock-outline" 
+                  size={24} 
+                  color="#000000" 
+                  accessibilityElementsHidden={true}
+                  importantForAccessibility="no"
+                />
               </View>
               <Text style={styles.formLabel}>Password:</Text>
             </View>
@@ -275,9 +279,8 @@ const LoginScreen = ({ navigation }) => {
               style={styles.forgotPasswordContainer}
               accessible={true}
               accessibilityLabel="Forgot password"
-              accessibilityHint="Click to reset your password"
+              accessibilityHint={isWeb ? "Click to reset your password" : "Double tap to reset your password"}
               accessibilityRole="link"
-              disabled={isLoading}
             >
               <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
             </TouchableOpacity>
@@ -292,16 +295,24 @@ const LoginScreen = ({ navigation }) => {
                 isLoading && styles.disabledButton
               ]} 
               onPress={handleLogin}
+              disabled={isLoading}
               accessible={true}
               accessibilityLabel="Login button"
               accessibilityHint={isWeb ? "Click to log in" : "Double tap to log in"}
               accessibilityRole="button"
-              disabled={isLoading}
             >
               <View style={styles.buttonContent}>
                 <Text style={styles.loginButtonText}>
                   {isLoading ? 'Logging in...' : 'Login'} 
-                  {!isLoading && <MaterialCommunityIcons name="arrow-right" size={24} color="white" />}
+                  {!isLoading && (
+                    <MaterialCommunityIcons 
+                      name="arrow-right" 
+                      size={24} 
+                      color="white" 
+                      accessibilityElementsHidden={true}
+                      importantForAccessibility="no"
+                    />
+                  )}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -357,19 +368,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   webContent: {
-    maxWidth: 500,
+    maxWidth: 480,
     marginHorizontal: 'auto',
     width: '100%',
-    paddingTop: 40,
   },
   headerImage: {
     width: '100%',
-    height: windowHeight * 0.2, // 20% of screen height
+    height: windowHeight * 0.2,
     marginBottom: 0,
   },
   webHeaderImage: {
-    height: 150,
-    marginBottom: 20,
+    height: 120,
+    objectFit: 'contain',
   },
   title: {
     fontSize: 32,
@@ -383,7 +393,7 @@ const styles = StyleSheet.create({
   },
   webFormContainer: {
     maxWidth: 400,
-    width: '100%',
+    marginHorizontal: 'auto',
   },
   labelContainer: {
     flexDirection: 'row',
@@ -416,8 +426,8 @@ const styles = StyleSheet.create({
     minHeight: 60,
   },
   webInput: {
-    minHeight: 50,
     outlineColor: '#24269B',
+    cursor: 'text',
   },
   loginButtonText: {
     color: '#fff',
@@ -440,10 +450,6 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 100,
-  },
-  buttonText: {
-    color: '#FFF',
-    fontSize: 18,
   },
   buttonContainer: {
     position: 'relative',
@@ -481,28 +487,21 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   webLoginButton: {
-    minHeight: 50,
     cursor: 'pointer',
-    transition: 'background-color 0.3s ease',
-    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+    transition: 'all 0.2s ease',
     ':hover': {
-      backgroundColor: '#1a1c7a',
+      backgroundColor: '#1a1b6e',
     },
   },
   disabledButton: {
-    backgroundColor: '#9999cc',
-    borderColor: '#9999cc',
+    opacity: 0.7,
+    cursor: 'not-allowed',
   },
   buttonContent: {
     alignItems: 'center',
     justifyContent: 'space-between',
     flexWrap: 'wrap',
     padding: 5,
-  },
-  buttonIcon: {
-    width: 90,
-    height: 90,
-    borderRadius: 15,
   },
   forgotPasswordContainer: {
     alignSelf: 'flex-end',
@@ -518,17 +517,15 @@ const styles = StyleSheet.create({
   },
   errorContainer: {
     backgroundColor: '#ffebee',
-    borderRadius: 8,
     padding: 10,
+    borderRadius: 8,
     marginVertical: 10,
     width: '100%',
     maxWidth: 400,
-    borderLeftWidth: 4,
-    borderLeftColor: '#f44336',
   },
   errorText: {
-    color: '#d32f2f',
-    fontSize: 14,
+    color: '#c62828',
+    textAlign: 'center',
   },
 });
 

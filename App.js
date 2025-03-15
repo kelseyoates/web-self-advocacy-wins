@@ -36,6 +36,7 @@ import { useEffect } from 'react';
 import { Linking } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { AccessibilityProvider } from './src/context/AccessibilityContext';
+import React from 'react';
 
 const Stack = createNativeStackNavigator();
 
@@ -83,6 +84,8 @@ const WebChatPlaceholder = () => (
 );
 
 export default function App() {
+  const navigationRef = React.useRef();
+
   useEffect(() => {
     // Handle deep links when app is already open
     const subscription = Linking.addEventListener('url', handleDeepLink);
@@ -102,24 +105,35 @@ export default function App() {
   const handleDeepLink = ({ url }) => {
     if (!url) return;
 
-    // Parse the URL
-    const { path, queryParams } = Linking.parse(url);
-
-    // Example URL: selfadvocatelink://win/123
-    if (path) {
-      const parts = path.split('/');
-      if (parts[0] === 'win' && parts[1]) {
-        const winId = parts[1];
-        // Navigate to the specific win
-        navigation.navigate('ViewWin', { winId });
+    try {
+      let pathParts;
+      
+      if (url.startsWith('selfadvocatelink://')) {
+        // Handle custom scheme URL
+        pathParts = url.replace('selfadvocatelink://', '').split('/').filter(Boolean);
+      } else {
+        // Handle standard URLs
+        const urlObj = new URL(url);
+        pathParts = urlObj.pathname.split('/').filter(Boolean);
       }
+
+      // Example URLs: 
+      // selfadvocatelink://win/123
+      // https://selfadvocatelink.app/win/123
+      if (pathParts[0] === 'win' && pathParts[1]) {
+        const winId = pathParts[1];
+        // Navigate to the specific win using the ref
+        navigationRef.current?.navigate('ViewWin', { winId });
+      }
+    } catch (error) {
+      console.error('Error parsing deep link:', error);
     }
   };
 
   return (
     <AccessibilityProvider>
       <AuthProvider>
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef}>
           
             <Stack.Navigator initialRouteName="Login">
               <Stack.Screen 

@@ -715,13 +715,18 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
     marginVertical: 5,
     padding: 15,
-    backgroundColor: '#fff',
-    background: 'linear-gradient(#f8f8f8, #fff)',
-    boxShadow: '0 8px 16px -8px rgba(0,0,0,0.4)',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 8
+    },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 5,
     borderWidth: 1,
     borderColor: '#000000',
-    paddingHorizontal: 10, // Reduced from 10
-    paddingVertical: 10, // Added to control vertical spacing
+    paddingHorizontal: 10,
+    paddingVertical: 10,
   },
   header: {
     flexDirection: 'row',
