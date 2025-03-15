@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { View, TextInput, FlatList, Text, StyleSheet, TouchableOpacity, Image, Alert, AccessibilityInfo, ScrollView } from 'react-native';
+import { View, TextInput, FlatList, Text, StyleSheet, TouchableOpacity, Image, Alert, AccessibilityInfo, ScrollView, Platform, ActivityIndicator } from 'react-native';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { CometChat } from '@cometchat-pro/react-native-chat';
+import { COMETCHAT_CONSTANTS } from '../config/cometChatConfig';
 import { useAccessibility } from '../context/AccessibilityContext';
+
+// Detect if running on web
+const isWeb = Platform.OS === 'web';
 
 const NewChatScreen = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('individual');
@@ -14,29 +18,59 @@ const NewChatScreen = ({ navigation }) => {
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [isScreenReaderEnabled, setIsScreenReaderEnabled] = useState(false);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
   const { showHelpers } = useAccessibility();
 
   useEffect(() => {
     const checkScreenReader = async () => {
-      const screenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
-      setIsScreenReaderEnabled(screenReaderEnabled);
+      try {
+        const screenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
+        setIsScreenReaderEnabled(screenReaderEnabled);
+      } catch (error) {
+        console.log('Error checking screen reader:', error);
+        // On web, this might fail, so we'll assume false
+        setIsScreenReaderEnabled(false);
+      }
     };
 
     checkScreenReader();
-    const subscription = AccessibilityInfo.addEventListener(
-      'screenReaderChanged',
-      setIsScreenReaderEnabled
-    );
+    
+    let subscription;
+    try {
+      subscription = AccessibilityInfo.addEventListener(
+        'screenReaderChanged',
+        setIsScreenReaderEnabled
+      );
+    } catch (error) {
+      console.log('Error setting up accessibility listener:', error);
+    }
 
     return () => {
-      subscription.remove();
+      if (subscription && subscription.remove) {
+        subscription.remove();
+      }
     };
   }, []);
 
   const announceToScreenReader = (message) => {
-    if (isScreenReaderEnabled) {
+    if (isScreenReaderEnabled && !isWeb) {
       AccessibilityInfo.announceForAccessibility(message);
+    } else if (isWeb && isScreenReaderEnabled) {
+      // For web with screen readers, we could use ARIA live regions
+      setError(message);
+    }
+  };
+
+  const showAlert = (title, message) => {
+    if (isWeb) {
+      // For web, use a more web-friendly approach
+      setError(message);
+      // You could also use a modal or toast component here
+    } else {
+      // For mobile, use Alert
+      Alert.alert(title, message);
     }
   };
 
@@ -48,6 +82,8 @@ const NewChatScreen = ({ navigation }) => {
     }
 
     try {
+      setIsLoading(true);
+      setError('');
       announceToScreenReader('Searching for users');
       const usersRef = collection(db, 'users');
       const q = query(
@@ -64,16 +100,38 @@ const NewChatScreen = ({ navigation }) => {
       setSearchResults(users);
       announceToScreenReader(`Found ${users.length} users`);
     } catch (error) {
+      console.error('Error searching for users:', error);
+      setError('Error searching for users. Please try again.');
       announceToScreenReader('Error searching for users');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const createIndividualChat = async (selectedUser) => {
     try {
+      setIsLoading(true);
+      setError('');
       const receiverId = selectedUser.originalUid || selectedUser.uid;
       
       console.log('Selected user full data:', selectedUser);
       console.log('Profile picture URL:', selectedUser.profilePicture);
+      
+      // For web, we need to ensure CometChat connection is established
+      if (isWeb) {
+        try {
+          // Check if user is logged in to CometChat
+          const loggedInUser = await CometChat.getLoggedinUser();
+          if (!loggedInUser) {
+            // If not logged in, try to login
+            await CometChat.login(user.uid.toLowerCase(), COMETCHAT_CONSTANTS.AUTH_KEY);
+          }
+        } catch (error) {
+          console.error('CometChat login error:', error);
+          setError('There was an issue connecting to the chat service. Some features may be limited.');
+          // Continue anyway - we'll still navigate to the chat screen
+        }
+      }
       
       // Navigate to chat with all user details
       const navigationParams = {
@@ -91,6 +149,9 @@ const NewChatScreen = ({ navigation }) => {
     } catch (error) {
       console.error('Error creating chat:', error);
       console.error('Error details:', error.message);
+      setError('Failed to start chat. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -224,14 +285,33 @@ const NewChatScreen = ({ navigation }) => {
     </TouchableOpacity>
   );
 
+  const renderErrorMessage = () => {
+    if (error) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={() => setError('')}
+          >
+            <Text style={styles.retryButtonText}>Dismiss</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return null;
+  };
+
   return (
     <ScrollView 
       style={styles.scrollContainer}
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={[styles.contentContainer, isWeb && styles.webContentContainer]}
       accessible={true}
       accessibilityLabel="New Chat Screen"
     >
-      <View style={styles.container}>
+      <View style={[styles.container, isWeb && styles.webContainer]}>
+        {renderErrorMessage()}
+        
         {showHelpers && (
           <View 
             style={styles.helperSection}
@@ -329,23 +409,40 @@ const NewChatScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        <View 
-          style={styles.searchContainer}
-          accessible={true}
-          accessibilityRole="search"
-        >
+        <View style={[styles.searchContainer, isWeb && styles.webSearchContainer]}>
           <TextInput
-            style={styles.searchInput}
-            placeholder="Search users..."
+            style={[styles.searchInput, isWeb && styles.webSearchInput]}
+            placeholder="Search for users..."
             value={searchQuery}
             onChangeText={(text) => {
               setSearchQuery(text);
-              searchUsers(text);
+              if (text.length >= 3) {
+                searchUsers(text);
+              } else {
+                setSearchResults([]);
+              }
             }}
             accessible={true}
-            accessibilityLabel="Search users input"
-            accessibilityHint="Enter a name to search for users"
+            accessibilityLabel="Search for users"
+            accessibilityHint="Enter at least 3 characters to search"
           />
+          {isLoading ? (
+            <View style={styles.searchIconContainer}>
+              <ActivityIndicator size="small" color="#24269B" />
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.searchIconContainer}
+              onPress={() => searchUsers(searchQuery)}
+              disabled={searchQuery.length < 3}
+            >
+              <MaterialCommunityIcons
+                name="magnify"
+                size={24}
+                color={searchQuery.length < 3 ? '#999' : '#24269B'}
+              />
+            </TouchableOpacity>
+          )}
         </View>
 
         {activeTab === 'group' && selectedMembers.length > 0 && (
@@ -646,7 +743,52 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 10,
     backgroundColor: '#fff',
-  }
+  },
+  webContainer: {
+    maxWidth: 800,
+    marginHorizontal: 'auto',
+    width: '100%',
+    padding: 20,
+  },
+  webContentContainer: {
+    alignItems: 'center',
+  },
+  webSearchContainer: {
+    maxWidth: 600,
+    marginHorizontal: 'auto',
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+  },
+  webSearchInput: {
+    fontSize: 16,
+    padding: 12,
+  },
+  errorContainer: {
+    backgroundColor: '#ffebee',
+    borderRadius: 8,
+    padding: 16,
+    marginVertical: 10,
+    marginHorizontal: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#f44336',
+  },
+  errorText: {
+    color: '#d32f2f',
+    fontSize: 14,
+    marginBottom: 10,
+  },
+  retryButton: {
+    backgroundColor: '#24269B',
+    borderRadius: 4,
+    padding: 8,
+    alignSelf: 'flex-end',
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 14,
+  },
+  searchIconContainer: {
+    padding: 10,
+  },
 });
 
 export default NewChatScreen; 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Image } from 'react-native';
+import { Image, Platform, Text, View, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { auth, db } from '../config/firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -13,6 +13,9 @@ import FindScreen from '../screens/FindScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 
 const Tab = createBottomTabNavigator();
+
+// Detect if running on web
+const isWeb = Platform.OS === 'web';
 
 const TabNavigator = ({ navigation }) => {
   const [profilePicture, setProfilePicture] = useState(null);
@@ -199,5 +202,27 @@ const TabNavigator = ({ navigation }) => {
     </Tab.Navigator>
   );
 };
+
+const styles = StyleSheet.create({
+  webPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#fff',
+  },
+  webPlaceholderTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    color: '#24269B',
+  },
+  webPlaceholderText: {
+    fontSize: 16,
+    textAlign: 'center',
+    maxWidth: 400,
+    lineHeight: 24,
+  }
+});
 
 export default TabNavigator; 

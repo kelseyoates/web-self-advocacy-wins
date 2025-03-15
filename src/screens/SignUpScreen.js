@@ -9,35 +9,68 @@ import { COMETCHAT_CONSTANTS } from '../config/cometChatConfig';
 import { Dimensions } from 'react-native';
 
 const windowHeight = Dimensions.get('window').height;
+const windowWidth = Dimensions.get('window').width;
 
+// Detect if running on web
+const isWeb = Platform.OS === 'web';
 
 const SignUpScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [userName, setUserName] = useState('');
   const [password, setPassword] = useState('');
   const [isScreenReaderEnabled, setIsScreenReaderEnabled] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   // Add screen reader detection
   useEffect(() => {
     const checkScreenReader = async () => {
-      const screenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
-      setIsScreenReaderEnabled(screenReaderEnabled);
+      try {
+        const screenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
+        setIsScreenReaderEnabled(screenReaderEnabled);
+      } catch (error) {
+        console.log('Error checking screen reader:', error);
+        // On web, this might fail, so we'll assume false
+        setIsScreenReaderEnabled(false);
+      }
     };
 
     checkScreenReader();
-    const subscription = AccessibilityInfo.addEventListener(
-      'screenReaderChanged',
-      setIsScreenReaderEnabled
-    );
+    
+    let subscription;
+    try {
+      subscription = AccessibilityInfo.addEventListener(
+        'screenReaderChanged',
+        setIsScreenReaderEnabled
+      );
+    } catch (error) {
+      console.log('Error setting up accessibility listener:', error);
+    }
 
     return () => {
-      subscription.remove();
+      if (subscription && subscription.remove) {
+        subscription.remove();
+      }
     };
   }, []);
 
   const announceToScreenReader = (message) => {
-    if (isScreenReaderEnabled) {
+    if (isScreenReaderEnabled && !isWeb) {
       AccessibilityInfo.announceForAccessibility(message);
+    } else if (isWeb) {
+      // For web, we can use ARIA live regions which are handled in the JSX
+      setErrorMsg(message);
+    }
+  };
+
+  const showAlert = (title, message, buttons) => {
+    if (isWeb) {
+      // For web, use a more web-friendly approach
+      setErrorMsg(message);
+      // You could also use a modal or toast component here
+    } else {
+      // For mobile, use Alert
+      Alert.alert(title, message, buttons || [{ text: 'OK' }]);
     }
   };
 
@@ -45,15 +78,52 @@ const SignUpScreen = ({ navigation }) => {
     setUserName(text.toLowerCase());
   };
 
+  // Function to create CometChat user
+  const createCometChatUser = async (uid, username) => {
+    try {
+      const user = new CometChat.User(uid);
+      user.setName(username.toLowerCase());
+      
+      await CometChat.createUser(user, COMETCHAT_CONSTANTS.AUTH_KEY);
+      console.log('CometChat user created successfully');
+      
+      // Login to CometChat
+      await CometChat.login(uid, COMETCHAT_CONSTANTS.AUTH_KEY);
+      console.log('CometChat login successful');
+      
+      return true;
+    } catch (error) {
+      console.error('CometChat user creation/login error:', error);
+      
+      // Handle specific CometChat errors
+      if (error.code === 'ERR_UID_ALREADY_EXISTS') {
+        // If user already exists, try to login directly
+        try {
+          await CometChat.login(uid, COMETCHAT_CONSTANTS.AUTH_KEY);
+          console.log('CometChat login successful after user already exists error');
+          return true;
+        } catch (loginError) {
+          console.error('CometChat login error after user exists error:', loginError);
+          return false;
+        }
+      }
+      
+      return false;
+    }
+  };
+
   const handleSignup = async () => {
     try {
       if (!userName.trim()) {
         announceToScreenReader('Please enter a username');
-        Alert.alert('Error', 'Please enter a username');
+        showAlert('Error', 'Please enter a username');
         return;
       }
 
+      setIsLoading(true);
+      setErrorMsg('');
       announceToScreenReader('Creating your account');
+      
       // Firebase Auth Signup
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const originalUid = userCredential.user.uid;
@@ -78,19 +148,26 @@ const SignUpScreen = ({ navigation }) => {
       await setDoc(doc(db, 'users', uid), userDoc);
       console.log('Firestore user document created successfully');
 
-      // CometChat Signup with lowercase UID
-      const user = new CometChat.User(uid);
-      user.setName(userName.toLowerCase());
+      // CometChat Signup - Handle for both web and mobile
+      let cometChatSuccess = false;
       
-      await CometChat.createUser(user, COMETCHAT_CONSTANTS.AUTH_KEY);
-      console.log('CometChat user created successfully');
-
-      // Login to CometChat with lowercase UID
-      await CometChat.login(uid, COMETCHAT_CONSTANTS.AUTH_KEY);
-      console.log('CometChat login successful');
-
-      // Navigate to main app screen
+      try {
+        cometChatSuccess = await createCometChatUser(uid, userName);
+      } catch (cometChatError) {
+        console.error('Error during CometChat setup:', cometChatError);
+        // We'll continue even if CometChat fails, but log the error
+      }
+      
+      if (!cometChatSuccess && isWeb) {
+        console.log('CometChat setup failed on web, but continuing with app navigation');
+        // Show a warning to the user that chat features might be limited
+        setErrorMsg('Your account was created, but chat features might be limited. You can still use other app features.');
+      }
+      
+      // Navigate to main app screen regardless of CometChat success
+      // This ensures users can still use the app even if chat is not working
       navigation.navigate('Main');
+      
       announceToScreenReader('Account created successfully');
     } catch (error) {
       console.error('Signup error details:', error);
@@ -98,7 +175,7 @@ const SignUpScreen = ({ navigation }) => {
       // Better error messages for users
       if (error.code === 'auth/email-already-in-use') {
         announceToScreenReader('Email already registered');
-        Alert.alert(
+        showAlert(
           'Email Already Registered',
           'This email address is already registered. Please use a different email or try logging in.',
           [
@@ -110,10 +187,18 @@ const SignUpScreen = ({ navigation }) => {
             }
           ]
         );
+      } else if (error.code === 'auth/weak-password') {
+        announceToScreenReader('Password is too weak');
+        showAlert('Weak Password', 'Please use a stronger password (at least 6 characters)');
+      } else if (error.code === 'auth/invalid-email') {
+        announceToScreenReader('Invalid email format');
+        showAlert('Invalid Email', 'Please enter a valid email address');
       } else {
         announceToScreenReader('Sign up failed');
-        Alert.alert('Signup Failed', error.message);
+        showAlert('Signup Failed', error.message);
       }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -125,16 +210,19 @@ const SignUpScreen = ({ navigation }) => {
     >
       <ScrollView 
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContentContainer}
+        contentContainerStyle={[
+          styles.scrollContentContainer,
+          isWeb && styles.webScrollContentContainer
+        ]}
         showsVerticalScrollIndicator={false}
         bounces={false}
         accessible={true}
         accessibilityLabel="Sign up form"
       >
-        <View style={styles.content}>
+        <View style={[styles.content, isWeb && styles.webContent]}>
           <Image 
             source={require('../../assets/logo.png')} 
-            style={styles.headerImage}
+            style={[styles.headerImage, isWeb && styles.webHeaderImage]}
             resizeMode="contain"
             accessible={true}
             accessibilityLabel="App logo"
@@ -148,121 +236,141 @@ const SignUpScreen = ({ navigation }) => {
             Create Account
           </Text>
           
-          <View 
-            style={styles.labelContainer}
-            accessible={true}
-            accessibilityRole="text"
-          >
-            <View style={styles.iconContainer}>
-              <MaterialCommunityIcons 
-                name="email-outline" 
-                size={24} 
-                color="black"
-                accessibilityElementsHidden={true}
-                importantForAccessibility="no"
-              />
+          {errorMsg ? (
+            <View 
+              style={styles.errorContainer} 
+              accessibilityLiveRegion="polite"
+              accessible={true}
+              accessibilityLabel={`Error: ${errorMsg}`}
+            >
+              <Text style={styles.errorText}>{errorMsg}</Text>
             </View>
-            <Text style={styles.formLabel}>Email:</Text>
-          </View>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              announceToScreenReader(`Email set to ${text}`);
-            }}
-            placeholder="Enter your email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            accessible={true}
-            accessibilityLabel="Email input"
-            accessibilityHint="Enter your email address"
-            accessibilityRole="text"
-          />
-
-          <View 
-            style={styles.labelContainer}
-            accessible={true}
-            accessibilityRole="text"
-          >
-            <View style={styles.iconContainer}>
-              <MaterialCommunityIcons 
-                name="account-outline" 
-                size={24} 
-                color="black"
-                accessibilityElementsHidden={true}
-                importantForAccessibility="no"
-              />
+          ) : null}
+          
+          <View style={[styles.formContainer, isWeb && styles.webFormContainer]}>
+            <View 
+              style={styles.labelContainer}
+              accessible={true}
+              accessibilityRole="text"
+            >
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons 
+                  name="email-outline" 
+                  size={24} 
+                  color="black"
+                  accessibilityElementsHidden={true}
+                  importantForAccessibility="no"
+                />
+              </View>
+              <Text style={styles.formLabel}>Email:</Text>
             </View>
-            <Text style={styles.formLabel}>Username:</Text>
-          </View>
-          <TextInput
-            style={styles.input}
-            value={userName}
-            onChangeText={(text) => {
-              handleUserNameChange(text);
-              announceToScreenReader(`Username set to ${text}`);
-            }}
-            placeholder="choose a username (lowercase)"
-            autoCapitalize="none"
-            autoCorrect={false}
-            accessible={true}
-            accessibilityLabel="Username input"
-            accessibilityHint="Choose a username in lowercase"
-            accessibilityRole="text"
-          />
+            <TextInput
+              style={[styles.input, isWeb && styles.webInput]}
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                announceToScreenReader(`Email set to ${text}`);
+              }}
+              placeholder="Enter your email"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              accessible={true}
+              accessibilityLabel="Email input"
+              accessibilityHint="Enter your email address"
+              accessibilityRole="text"
+            />
 
-          <View 
-            style={styles.labelContainer}
-            accessible={true}
-            accessibilityRole="text"
-          >
-            <View style={styles.iconContainer}>
-              <MaterialCommunityIcons 
-                name="lock-outline" 
-                size={24} 
-                color="black"
-                accessibilityElementsHidden={true}
-                importantForAccessibility="no"
-              />
+            <View 
+              style={styles.labelContainer}
+              accessible={true}
+              accessibilityRole="text"
+            >
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons 
+                  name="account-outline" 
+                  size={24} 
+                  color="black"
+                  accessibilityElementsHidden={true}
+                  importantForAccessibility="no"
+                />
+              </View>
+              <Text style={styles.formLabel}>Username:</Text>
             </View>
-            <Text style={styles.formLabel}>Password:</Text>
-          </View>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={(text) => {
-              setPassword(text);
-              announceToScreenReader("Password field updated");
-            }}
-            placeholder="Create a password"
-            secureTextEntry
-            accessible={true}
-            accessibilityLabel="Password input"
-            accessibilityHint="Create your password"
-            accessibilityRole="text"
-          />
+            <TextInput
+              style={[styles.input, isWeb && styles.webInput]}
+              value={userName}
+              onChangeText={(text) => {
+                handleUserNameChange(text);
+                announceToScreenReader(`Username set to ${text}`);
+              }}
+              placeholder="choose a username (lowercase)"
+              autoCapitalize="none"
+              autoCorrect={false}
+              accessible={true}
+              accessibilityLabel="Username input"
+              accessibilityHint="Choose a username in lowercase"
+              accessibilityRole="text"
+            />
 
-          <View style={styles.buttonContainer}>
-            <View style={styles.buttonShadow} />
+            <View 
+              style={styles.labelContainer}
+              accessible={true}
+              accessibilityRole="text"
+            >
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons 
+                  name="lock-outline" 
+                  size={24} 
+                  color="black"
+                  accessibilityElementsHidden={true}
+                  importantForAccessibility="no"
+                />
+              </View>
+              <Text style={styles.formLabel}>Password:</Text>
+            </View>
+            <TextInput
+              style={[styles.input, isWeb && styles.webInput]}
+              value={password}
+              onChangeText={(text) => {
+                setPassword(text);
+                announceToScreenReader("Password field updated");
+              }}
+              placeholder="Create a password"
+              secureTextEntry
+              accessible={true}
+              accessibilityLabel="Password input"
+              accessibilityHint="Create your password"
+              accessibilityRole="text"
+            />
+          </View>
+
+          <View style={[styles.buttonContainer, isWeb && styles.webButtonContainer]}>
+            {!isWeb && <View style={styles.buttonShadow} />}
             <TouchableOpacity 
-              style={styles.signupButton} 
+              style={[
+                styles.signupButton, 
+                isWeb && styles.webSignupButton,
+                isLoading && styles.disabledButton
+              ]} 
               onPress={handleSignup}
               accessible={true}
               accessibilityLabel="Sign up button"
-              accessibilityHint="Double tap to create your account"
+              accessibilityHint={isWeb ? "Click to create your account" : "Double tap to create your account"}
               accessibilityRole="button"
+              disabled={isLoading}
             >
               <View style={styles.buttonContent}>
                 <Text style={styles.signupButtonText}>
-                  Sign Up 
-                  <MaterialCommunityIcons 
-                    name="arrow-right" 
-                    size={24} 
-                    color="white"
-                    accessibilityElementsHidden={true}
-                    importantForAccessibility="no"
-                  />
+                  {isLoading ? 'Creating Account...' : 'Sign Up'} 
+                  {!isLoading && (
+                    <MaterialCommunityIcons 
+                      name="arrow-right" 
+                      size={24} 
+                      color="white"
+                      accessibilityElementsHidden={true}
+                      importantForAccessibility="no"
+                    />
+                  )}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -281,8 +389,9 @@ const SignUpScreen = ({ navigation }) => {
               }}
               accessible={true}
               accessibilityLabel="Go to login"
-              accessibilityHint="Double tap to go to login screen"
+              accessibilityHint={isWeb ? "Click to go to login screen" : "Double tap to go to login screen"}
               accessibilityRole="link"
+              disabled={isLoading}
             >
               <Text style={styles.footerLink}>Login</Text>
             </TouchableOpacity>
@@ -307,16 +416,28 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minHeight: windowHeight,
   },
+  webScrollContentContainer: {
+    minHeight: '100vh',
+  },
   content: {
     flex: 1,
     padding: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
+  webContent: {
+    maxWidth: 500,
+    marginHorizontal: 'auto',
+    width: '100%',
+    paddingTop: 40,
+  },
   headerImage: {
     width: '100%',
     height: windowHeight * 0.2, // 20% of screen height
+    marginBottom: 20,
+  },
+  webHeaderImage: {
+    height: 150,
     marginBottom: 20,
   },
   title: {
@@ -327,6 +448,10 @@ const styles = StyleSheet.create({
   formContainer: {
     width: '100%',
     marginTop: 0,
+  },
+  webFormContainer: {
+    maxWidth: 400,
+    width: '100%',
   },
   labelContainer: {
     flexDirection: 'row',
@@ -353,9 +478,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
+    minHeight: 60,
   },
-  
- 
+  webInput: {
+    minHeight: 50,
+    outlineColor: '#24269B',
+  },
   signupButtonText: {
     color: '#fff',
     fontSize: 20,
@@ -376,17 +504,18 @@ const styles = StyleSheet.create({
   bottomPadding: {
     height: 100,
   },
- 
   buttonText: {
     color: '#FFF',
     fontSize: 18,
   },
-
   buttonContainer: {
     position: 'relative',
     marginVertical: 40,
   },
-
+  webButtonContainer: {
+    maxWidth: 400,
+    width: '90%',
+  },
   buttonShadow: {
     position: 'absolute',
     top: 8,
@@ -396,7 +525,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     borderRadius: 8,
   },
-
   signupButton: {
     backgroundColor: '#24269B',
     borderRadius: 8,
@@ -414,18 +542,44 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#24269B',
   },
-
+  webSignupButton: {
+    width: '100%',
+    minHeight: 50,
+    height: 'auto',
+    cursor: 'pointer',
+    transition: 'background-color 0.3s ease',
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+    ':hover': {
+      backgroundColor: '#1a1c7a',
+    },
+  },
+  disabledButton: {
+    backgroundColor: '#9999cc',
+    borderColor: '#9999cc',
+  },
   buttonContent: {
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-
-
   buttonIcon: {
     width: 90,
     height: 90,
     borderRadius: 15,
-  }
+  },
+  errorContainer: {
+    backgroundColor: '#ffebee',
+    borderRadius: 8,
+    padding: 10,
+    marginVertical: 10,
+    width: '100%',
+    maxWidth: 400,
+    borderLeftWidth: 4,
+    borderLeftColor: '#f44336',
+  },
+  errorText: {
+    color: '#d32f2f',
+    fontSize: 14,
+  },
 });
 
 export default SignUpScreen;

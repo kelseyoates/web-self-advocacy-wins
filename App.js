@@ -2,6 +2,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { CometChat } from '@cometchat-pro/react-native-chat';
 import { COMETCHAT_CONSTANTS } from './src/config/cometChatConfig';
+import { Platform, View, Text, StyleSheet } from 'react-native';
 import LoginScreen from './src/screens/LoginScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
 import TabNavigator from './src/navigation/TabNavigator';
@@ -38,6 +39,10 @@ import { AccessibilityProvider } from './src/context/AccessibilityContext';
 
 const Stack = createNativeStackNavigator();
 
+// Detect if running on web
+const isWeb = Platform.OS === 'web';
+
+// Initialize CometChat for both web and mobile
 const appSettings = new CometChat.AppSettingsBuilder()
   .subscribePresenceForAllUsers()
   .setRegion(COMETCHAT_CONSTANTS.REGION)
@@ -48,13 +53,34 @@ const initCometChat = async () => {
   try {
     const response = await CometChat.init(COMETCHAT_CONSTANTS.APP_ID, appSettings);
     console.log("CometChat initialization successful:", response);
+    
+    if (isWeb) {
+      console.log("CometChat initialized for web platform");
+      // Additional web-specific initialization if needed
+      CometChat.setSource('web-saw', 'web', 'react-native');
+    }
   } catch (error) {
     console.log("CometChat initialization failed:", error);
+    
+    if (isWeb) {
+      console.error("CometChat web initialization error:", error);
+    }
   }
 };
 
 // Call initialization
 initCometChat();
+
+// Web placeholder for advanced chat-related screens that aren't fully compatible with web yet
+const WebChatPlaceholder = () => (
+  <View style={styles.webPlaceholder}>
+    <Text style={styles.webPlaceholderTitle}>Feature Coming Soon</Text>
+    <Text style={styles.webPlaceholderText}>
+      This feature is currently being optimized for web. 
+      For the best experience, please use our mobile app.
+    </Text>
+  </View>
+);
 
 export default function App() {
   useEffect(() => {
@@ -111,22 +137,44 @@ export default function App() {
                 component={TabNavigator}
                 options={{ headerShown: false }}
               />
+              
+              {/* Update chat-related screens for web compatibility */}
               <Stack.Screen
                 name="ChatConversation"
                 component={ChatConversationScreen}
-                options={{ title: '' }}
+                options={{ title: 'Chat' }}
               />
               <Stack.Screen
                 name="NewChat"
                 component={NewChatScreen}
-                options={{ title: '' }}
+                options={{ title: 'New Chat' }}
               />
-            
               <Stack.Screen
                 name="GroupChatSetup"
-                component={GroupChatSetupScreen}
-                options={{ title: '' }}
+                component={isWeb ? WebChatPlaceholder : GroupChatSetupScreen}
+                options={{ title: 'Group Chat Setup' }}
               />
+              <Stack.Screen
+                name="GroupChat"
+                component={isWeb ? WebChatPlaceholder : GroupChatScreen}
+                options={{ title: 'Group Chat' }}
+              />
+              <Stack.Screen
+                name="SupportedUserChat"
+                component={isWeb ? WebChatPlaceholder : SupportedUserChatScreen}
+                options={{ title: 'Chat' }}
+              />
+              <Stack.Screen
+                name="SupportedUserChatDetails"
+                component={isWeb ? WebChatPlaceholder : SupportedUserChatDetailsScreen}
+                options={{ title: 'Chat Details' }}
+              />
+              <Stack.Screen
+                name="SupportedUserGroupChatDetails"
+                component={isWeb ? WebChatPlaceholder : SupportedUserGroupChatDetailsScreen}
+                options={{ title: 'Group Chat Details' }}
+              />
+              
               <Stack.Screen
                 name="MainNavigator"
                 component={MainNavigator}
@@ -151,12 +199,8 @@ export default function App() {
                   title: route.params?.username ? `${route.params.username}'s Profile` : 'Profile',
                 })}
               />
+              
               <Stack.Screen
-                name="GroupChat"
-                component={GroupChatScreen}
-                options={{ title: 'Group Chat' }}
-              />
-                <Stack.Screen
                 name="Settings"
                 component={SettingsScreen}
                 options={{ title: 'Menu' }}
@@ -197,21 +241,7 @@ export default function App() {
                 component={ManageSubscriptionScreen}
                 options={{ title: 'Manage Subscription' }}
               />
-              <Stack.Screen
-                name="SupportedUserChat"
-                component={SupportedUserChatScreen}
-                options={{ title: 'Chat' }}
-              />
-              <Stack.Screen
-                name="SupportedUserChatDetails"
-                component={SupportedUserChatDetailsScreen}
-                options={{ title: 'Chat Details' }}
-              />
-              <Stack.Screen
-                name="SupportedUserGroupChatDetails"
-                component={SupportedUserGroupChatDetailsScreen}
-                options={{ title: 'Group Chat Details' }}
-              />
+              
               <Stack.Screen
                 name="Community"
                 component={CommunityScreen}
@@ -245,3 +275,25 @@ export default function App() {
     </AccessibilityProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  webPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#fff',
+  },
+  webPlaceholderTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    color: '#24269B',
+  },
+  webPlaceholderText: {
+    fontSize: 16,
+    textAlign: 'center',
+    maxWidth: 400,
+    lineHeight: 24,
+  }
+});

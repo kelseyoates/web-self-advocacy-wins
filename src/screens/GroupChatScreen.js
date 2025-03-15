@@ -23,6 +23,9 @@ import { getDoc, doc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { COMETCHAT_CONSTANTS } from '../config/cometChatConfig';
 
+// Detect if running on web
+const isWeb = Platform.OS === 'web';
+
 const containsProfanity = (text) => {
   const profanityList = [
     'shit', 'fuck', 'damn', 'ass', 'bitch', 'crap', 'piss',
@@ -63,13 +66,19 @@ const GroupInfoButton = ({ onPress }) => {
     <TouchableOpacity
       onPress={() => {
         console.log('Info button pressed');
-        Alert.alert('Debug', 'Info button pressed'); // Debug alert
-        onPress();
+        if (isWeb) {
+          // For web, just call the handler directly without debug alert
+          onPress();
+        } else {
+          Alert.alert('Debug', 'Info button pressed'); // Debug alert for mobile only
+          onPress();
+        }
       }}
       style={{
         marginRight: 15,
         padding: 10,
         backgroundColor: 'transparent',
+        cursor: isWeb ? 'pointer' : 'default',
       }}
     >
       <MaterialCommunityIcons
@@ -102,28 +111,63 @@ const GroupChatScreen = ({ route, navigation }) => {
   const [isLoadingSmartReplies, setIsLoadingSmartReplies] = useState(false);
   const [isScreenReaderEnabled, setIsScreenReaderEnabled] = useState(false);
   const [blockedUsers, setBlockedUsers] = useState(new Set());
+  const [error, setError] = useState('');
+  const [reconnecting, setReconnecting] = useState(false);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const MAX_RECONNECT_ATTEMPTS = 3;
+  const reconnectIntervalRef = useRef(null);
 
   // Add screen reader detection
   useEffect(() => {
     const checkScreenReader = async () => {
-      const screenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
-      setIsScreenReaderEnabled(screenReaderEnabled);
+      try {
+        const screenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
+        setIsScreenReaderEnabled(screenReaderEnabled);
+      } catch (error) {
+        console.log('Error checking screen reader:', error);
+        // On web, this might fail, so we'll assume false
+        setIsScreenReaderEnabled(false);
+      }
     };
 
     checkScreenReader();
-    const subscription = AccessibilityInfo.addEventListener(
-      'screenReaderChanged',
-      setIsScreenReaderEnabled
-    );
+    
+    let subscription;
+    try {
+      subscription = AccessibilityInfo.addEventListener(
+        'screenReaderChanged',
+        setIsScreenReaderEnabled
+      );
+    } catch (error) {
+      console.log('Error setting up accessibility listener:', error);
+    }
 
     return () => {
-      subscription.remove();
+      if (subscription && subscription.remove) {
+        subscription.remove();
+      }
     };
   }, []);
 
   const announceToScreenReader = (message) => {
-    if (isScreenReaderEnabled) {
+    if (isScreenReaderEnabled && !isWeb) {
       AccessibilityInfo.announceForAccessibility(message);
+    } else if (isWeb && isScreenReaderEnabled) {
+      // For web with screen readers, we could use ARIA live regions
+      // This is a simplified approach - in a real app, you'd use proper ARIA live regions
+      setError(message);
+    }
+  };
+
+  // Show alert with platform-specific handling
+  const showAlert = (title, message) => {
+    if (isWeb) {
+      // For web, use a more web-friendly approach
+      setError(message);
+      // You could also use a modal or toast component here
+    } else {
+      // For mobile, use Alert
+      Alert.alert(title, message);
     }
   };
 
@@ -164,6 +208,7 @@ const GroupChatScreen = ({ route, navigation }) => {
       console.log('Group info with members:', updatedGroupInfo);
     } catch (error) {
       console.log('Error fetching group info:', error);
+      setError('Failed to load group information. Please try again.');
     }
   };
 
@@ -185,13 +230,92 @@ const GroupChatScreen = ({ route, navigation }) => {
     }
   };
 
+  // Setup reconnection mechanism for web
+  useEffect(() => {
+    if (isWeb) {
+      // Check connection status periodically
+      const checkConnection = async () => {
+        try {
+          const loggedInUser = await CometChat.getLoggedinUser();
+          
+          if (!loggedInUser) {
+            console.log("Connection lost, attempting to reconnect...");
+            setReconnecting(true);
+            setReconnectAttempts(prev => prev + 1);
+            
+            try {
+              // Try to login again
+              await CometChat.login(user.uid.toLowerCase(), COMETCHAT_CONSTANTS.AUTH_KEY);
+              console.log("Reconnection successful");
+              
+              // Reset reconnection state
+              setReconnecting(false);
+              setReconnectAttempts(0);
+              setError('');
+              
+              // Refresh messages
+              await fetchMessages();
+            } catch (loginError) {
+              console.error("Reconnection failed:", loginError);
+              
+              if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                setError("Connection lost. Please refresh the page to reconnect.");
+                clearInterval(reconnectIntervalRef.current);
+              } else {
+                setError(`Connection lost. Attempting to reconnect... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+              }
+            }
+          } else if (reconnecting) {
+            // We're connected again
+            setReconnecting(false);
+            setReconnectAttempts(0);
+            setError('');
+          }
+        } catch (error) {
+          console.error("Error checking connection:", error);
+          setReconnecting(true);
+        }
+      };
+      
+      // Check every 30 seconds
+      reconnectIntervalRef.current = setInterval(checkConnection, 30000);
+      
+      return () => {
+        if (reconnectIntervalRef.current) {
+          clearInterval(reconnectIntervalRef.current);
+        }
+      };
+    }
+  }, [isWeb, user, reconnectAttempts, reconnecting]);
+
   useEffect(() => {
     const initializeChat = async () => {
       try {
+        // Check if user is logged in to CometChat
         const user = await CometChat.getLoggedinUser();
-        setCurrentUser(user);
+        
+        if (!user && isWeb) {
+          // For web, try to login if not already logged in
+          try {
+            const currentUser = auth.currentUser;
+            if (!currentUser) {
+              throw new Error("No Firebase user found");
+            }
+            
+            await CometChat.login(currentUser.uid.toLowerCase(), COMETCHAT_CONSTANTS.AUTH_KEY);
+            const loggedInUser = await CometChat.getLoggedinUser();
+            setCurrentUser(loggedInUser);
+          } catch (loginError) {
+            console.error("CometChat login error:", loginError);
+            setError("There was an issue connecting to the chat service. Some features may be limited.");
+          }
+        } else {
+          setCurrentUser(user);
+        }
+        
         await fetchMessages();
         await fetchGroupInfo();
+        await fetchBlockedUsers();
 
         // Set the navigation header title to the group name
         navigation.setOptions({
@@ -199,409 +323,250 @@ const GroupChatScreen = ({ route, navigation }) => {
           headerTitleStyle: {
             color: '#24269B',
             fontSize: 18,
-            fontWeight: '600',
-          }
+            fontWeight: 'bold',
+          },
+          headerRight: () => (
+            <GroupInfoButton onPress={() => toggleModal()} />
+          ),
         });
 
+        // Set up message listener
+        const listenerId = `group_${uid}`;
+        CometChat.addMessageListener(
+          listenerId,
+          new CometChat.MessageListener({
+            onTextMessageReceived: message => {
+              console.log('Text message received:', message);
+              if (message.receiverType === 'group' && message.receiverId === uid) {
+                setMessages(prevMessages => [message, ...prevMessages]);
+                announceToScreenReader(`New message from ${message.sender.name}: ${message.text}`);
+                
+                // Generate smart replies for the received message
+                getSmartReplies(message);
+              }
+            },
+            onMediaMessageReceived: message => {
+              console.log('Media message received:', message);
+              if (message.receiverType === 'group' && message.receiverId === uid) {
+                setMessages(prevMessages => [message, ...prevMessages]);
+                announceToScreenReader(`New media message from ${message.sender.name}`);
+              }
+            },
+            onCustomMessageReceived: message => {
+              console.log('Custom message received:', message);
+              if (message.receiverType === 'group' && message.receiverId === uid) {
+                setMessages(prevMessages => [message, ...prevMessages]);
+                announceToScreenReader(`New custom message from ${message.sender.name}`);
+              }
+            },
+            onMessageDeleted: message => {
+              console.log('Message deleted:', message);
+              setMessages(prevMessages => 
+                prevMessages.filter(m => m.id !== message.id)
+              );
+              announceToScreenReader('A message was deleted');
+            },
+            onMessageEdited: message => {
+              console.log('Message edited:', message);
+              setMessages(prevMessages => 
+                prevMessages.map(m => m.id === message.id ? message : m)
+              );
+              announceToScreenReader('A message was edited');
+            },
+          })
+        );
+
+        // Clean up listener on unmount
+        return () => {
+          CometChat.removeMessageListener(listenerId);
+        };
       } catch (error) {
-        console.log("Initialization error:", error);
+        console.error('Error initializing chat:', error);
+        setError('Failed to initialize chat. Please try again.');
       }
     };
 
     initializeChat();
-  }, [navigation, name]); // Update dependency array to use name
+  }, [navigation, uid, name]);
 
-  const fetchMessages = useCallback(async () => {
+  const fetchMessages = async () => {
     try {
-      console.log("Fetching messages for:", uid);
-      // Remove the group_ prefix if it exists
-      const groupId = uid.replace('group_', '');
-      
+      setError('');
       const messagesRequest = new CometChat.MessagesRequestBuilder()
-        .setGUID(groupId)  // Use setGUID for groups
+        .setGUID(uid)
         .setLimit(50)
         .build();
 
       const fetchedMessages = await messagesRequest.fetchPrevious();
-      console.log("Fetched messages count:", fetchedMessages.length);
+      console.log('Fetched messages:', fetchedMessages);
       
-      // Filter out action, system, and deleted messages
-      const validMessages = fetchedMessages.filter(msg => 
-        msg.category !== 'action' && 
-        msg.category !== 'system' && 
-        msg.senderId !== 'app_system' &&
-        !msg.deletedAt
-      );
+      // Sort messages in reverse chronological order (newest first)
+      const sortedMessages = fetchedMessages.sort((a, b) => b.sentAt - a.sentAt);
+      setMessages(sortedMessages);
       
-      console.log("Valid messages count:", validMessages.length);
-      setMessages(validMessages);
+      // Generate smart replies for the latest message if it exists
+      if (sortedMessages.length > 0) {
+        getSmartReplies(sortedMessages[0]);
+      }
       
-      // Scroll to bottom after fetching
-      requestAnimationFrame(() => {
-        if (flatListRef.current) {
-          flatListRef.current.scrollToEnd({ animated: false });
-        }
-      });
+      announceToScreenReader(`Loaded ${fetchedMessages.length} messages`);
     } catch (error) {
-      console.log("Error fetching messages:", error);
+      console.error('Error fetching messages:', error);
+      setError('Failed to load messages. Please try again.');
     }
-  }, [uid]);
+  };
 
   const sendMessage = async () => {
     if (!inputText.trim()) return;
-
+    
     try {
-      containsProfanity(inputText);
-      // Create message with data masking enabled
+      // Check for profanity or personal information
+      try {
+        containsProfanity(inputText);
+      } catch (error) {
+        if (error.message === 'PROFANITY') {
+          showAlert('Warning', 'Your message contains inappropriate language. Please revise it.');
+          return;
+        } else if (error.message === 'PERSONAL_INFO_EMAIL' || error.message === 'PERSONAL_INFO_PHONE') {
+          showAlert('Warning', 'Your message appears to contain personal information. For your safety, please avoid sharing contact details.');
+          return;
+        }
+      }
+      
       const textMessage = new CometChat.TextMessage(
         uid,
         inputText.trim(),
         CometChat.RECEIVER_TYPE.GROUP
       );
-
-      // Enable data masking
-      textMessage.metadata = {
-        dataMasking: true,
-        sensitive_data: true
-      };
-
-      const sentMessage = await CometChat.sendMessage(textMessage);
-      console.log('Message sent successfully');
       
-      setMessages(prev => [...prev, sentMessage]);
+      // Clear input before sending to improve perceived performance
       setInputText('');
-
-      if (flatListRef.current) {
-        flatListRef.current.scrollToEnd({ animated: true });
-      }
+      
+      const sentMessage = await CometChat.sendMessage(textMessage);
+      console.log('Message sent successfully:', sentMessage);
+      
+      // Add the sent message to the messages list
+      setMessages(prevMessages => [sentMessage, ...prevMessages]);
+      
+      // Clear smart replies after sending a message
+      setSmartReplies([]);
+      
       announceToScreenReader('Message sent');
     } catch (error) {
-      switch (error.message) {
-        case 'PERSONAL_INFO_EMAIL':
-          announceToScreenReader('Message blocked: Contains email address');
-          Alert.alert(
-            'Personal Information Detected',
-            'For your safety, please do not share email addresses in chat messages.'
-          );
-          return;
-        case 'PERSONAL_INFO_PHONE':
-          announceToScreenReader('Message blocked: Contains phone number');
-          Alert.alert(
-            'Personal Information Detected',
-            'For your safety, please do not share phone numbers in chat messages.'
-          );
-          return;
-        case 'PROFANITY':
-          announceToScreenReader('Message contains inappropriate language');
-          Alert.alert(
-            'Inappropriate Content',
-            'Your message contains inappropriate language. Please revise and try again.'
-          );
-          return;
-        default:
-          if (error.code === 'ERR_BLOCKED_BY_EXTENSION') {
-            announceToScreenReader('Message was blocked by content filter');
-          } else {
-            announceToScreenReader('Failed to send message');
-          }
-          // Handle CometChat's profanity filter error without logging
-          if (error.code === 'ERR_BLOCKED_BY_EXTENSION' && 
-              error.details?.action === 'do_not_propagate') {
-            Alert.alert(
-              'Message Blocked',
-              'Your message was blocked by our content filter. Please revise and try again.'
-            );
-          } else {
-            // Only log non-profanity errors
-            console.error('Error sending message:', error);
-            Alert.alert('Error', 'Failed to send message');
-          }
-      }
-    }
-  };
-
-  const leaveGroup = async () => {
-    // First check if user is the owner
-    if (groupInfo?.owner === currentUser?.uid) {
-      Alert.alert(
-        'Cannot Leave Group',
-        'As the group creator, you cannot leave this group. You must either delete the group or transfer ownership to another member first.',
-        [{ text: 'OK', style: 'default' }]
-      );
-      announceToScreenReader('Cannot leave group as you are the owner');
-      return;
-    }
-
-    // If not owner, proceed with leave confirmation
-    Alert.alert(
-      'Leave Group',
-      'Are you sure you want to leave this group?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Leave',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await CometChat.leaveGroup(uid);
-              navigation.goBack();
-              announceToScreenReader('Successfully left the group');
-            } catch (error) {
-              console.error('Error leaving group:', error);
-              Alert.alert('Error', 'Failed to leave group');
-              announceToScreenReader('Failed to leave group');
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const updateGroupName = async () => {
-    if (!newGroupName.trim() || !uid) return;
-
-    try {
-      console.log('Updating group name for group:', uid);
+      console.error('Error sending message:', error);
       
-      // Create group object with required parameters
-      const group = new CometChat.Group(
-        uid,
-        newGroupName.trim(),
-        CometChat.GROUP_TYPE.PRIVATE
-      );
-
-      const updatedGroup = await CometChat.updateGroup(group);
-      console.log('Group updated:', updatedGroup);
-
-      // Update local state
-      setGroupInfo(prevInfo => ({
-        ...prevInfo,
-        name: newGroupName.trim()
-      }));
-
-      // Update navigation title
-      navigation.setOptions({
-        title: newGroupName.trim()
-      });
-
-      // Clear input and close modal
-      setNewGroupName('');
-      setIsModalVisible(false);
-
-      // Show success message
-      Alert.alert('Success', 'Group name updated successfully');
-
-    } catch (error) {
-      console.error('Error updating group name:', error);
-      Alert.alert(
-        'Error',
-        'Failed to update group name. Please try again.'
-      );
+      if (isWeb) {
+        setError('Failed to send message. Please try again.');
+      } else {
+        Alert.alert('Error', 'Failed to send message. Please try again.');
+      }
+      
+      // Restore the input text in case of error
+      setInputText(inputText);
     }
   };
 
   const handleAttachment = async () => {
     try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (!permissionResult.granted) {
-        Alert.alert('Permission needed', 'Please grant permission to access your photos');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.8,
-        allowsEditing: true,
-      });
-
-      if (!result.canceled) {
+      if (isWeb) {
+        // Web-specific image picker
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        
+        // Create a promise to handle the file selection
+        const fileSelected = new Promise((resolve) => {
+          input.onchange = (event) => {
+            const file = event.target.files[0];
+            if (file) {
+              resolve(file);
+            } else {
+              resolve(null);
+            }
+          };
+        });
+        
+        // Trigger the file input click
+        input.click();
+        
+        // Wait for file selection
+        const file = await fileSelected;
+        if (!file) return;
+        
         setIsUploading(true);
-        const imageUri = result.assets[0].uri;
-
-        // Create media message with moderation enabled
+        
+        // Create a media message
         const mediaMessage = new CometChat.MediaMessage(
           uid,
-          {
-            uri: imageUri,
-            type: 'image/jpeg',
-            name: `image_${Date.now()}.jpg`
-          },
+          file,
           CometChat.MESSAGE_TYPE.IMAGE,
           CometChat.RECEIVER_TYPE.GROUP
         );
-
-        // Enable image moderation
-        mediaMessage.metadata = {
-          imageModeration: true,
-          sensitive_content: true
-        };
-
-        try {
-          const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
-          console.log('Image sent successfully');
-          
-          setMessages(prev => [...prev, sentMessage]);
-          
-          if (flatListRef.current) {
-            flatListRef.current.scrollToEnd({ animated: true });
-          }
-        } catch (error) {
-          if (error.code === 'ERR_BLOCKED_BY_EXTENSION') {
-            Alert.alert(
-              'Image Blocked',
-              'This image was blocked by our content filter. Please choose another image.'
-            );
-          } else {
-            console.error('Error sending image:', error);
-            Alert.alert('Error', 'Failed to send image');
-          }
+        
+        // Send the media message
+        const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
+        console.log('Media message sent successfully:', sentMessage);
+        
+        // Add the sent message to the messages list
+        setMessages(prevMessages => [sentMessage, ...prevMessages]);
+        
+        announceToScreenReader('Image sent');
+      } else {
+        // Mobile image picker
+        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        
+        if (permissionResult.granted === false) {
+          Alert.alert('Permission Required', 'You need to grant access to your photos to send images.');
+          return;
         }
+        
+        const pickerResult = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.8,
+        });
+        
+        if (pickerResult.canceled) return;
+        
+        setIsUploading(true);
+        
+        // Get the selected asset
+        const asset = pickerResult.assets[0];
+        
+        // Create a blob from the image URI
+        const response = await fetch(asset.uri);
+        const blob = await response.blob();
+        
+        // Create a File object from the blob
+        const file = new File([blob], 'image.jpg', { type: 'image/jpeg' });
+        
+        // Create a media message
+        const mediaMessage = new CometChat.MediaMessage(
+          uid,
+          file,
+          CometChat.MESSAGE_TYPE.IMAGE,
+          CometChat.RECEIVER_TYPE.GROUP
+        );
+        
+        // Send the media message
+        const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
+        console.log('Media message sent successfully:', sentMessage);
+        
+        // Add the sent message to the messages list
+        setMessages(prevMessages => [sentMessage, ...prevMessages]);
+        
+        announceToScreenReader('Image sent');
       }
     } catch (error) {
-      console.error('Error handling attachment:', error);
-      Alert.alert('Error', 'Failed to access image library');
+      console.error('Error sending media message:', error);
+      
+      if (isWeb) {
+        setError('Failed to send image. Please try again.');
+      } else {
+        Alert.alert('Error', 'Failed to send image. Please try again.');
+      }
     } finally {
       setIsUploading(false);
-    }
-  };
-
-  const handleReportMessage = async (message) => {
-    try {
-      const reportType = "inappropriate";
-      const reportMessage = await CometChat.reportMessage(
-        message.id,
-        reportType,
-        { reason: "Inappropriate content" }
-      );
-      
-      console.log("Message reported successfully:", reportMessage);
-      Alert.alert(
-        "Message Reported",
-        "Thank you for helping keep our community safe."
-      );
-    } catch (error) {
-      console.error("Error reporting message:", error);
-      Alert.alert(
-        "Error",
-        "Failed to report message. Please try again."
-      );
-    }
-  };
-
-  const submitReport = async (user, reportReason) => {
-    try {
-      console.log('Reporting user:', user.uid, 'for reason:', reportReason);
-
-      // First, notify the reported user
-      const userNotification = new CometChat.TextMessage(
-        user.uid,
-        `Your account has been reported in the group "${groupInfo.name}" for review.`,
-        'user'
-      );
-
-      // Add metadata to user notification
-      userNotification.setMetadata({
-        reportType: 'user',
-        reason: reportReason,
-        groupContext: groupInfo.guid,
-        groupName: groupInfo.name,
-        timestamp: new Date().getTime()
-      });
-      
-      // Send notification to user
-      await CometChat.sendMessage(userNotification);
-
-      // Then create the group report record
-      const groupReport = new CometChat.TextMessage(
-        groupInfo.guid,
-        `[REPORT] A report has been submitted for review.`,
-        'group'
-      );
-
-      // Add full metadata to group report
-      groupReport.setMetadata({
-        reportType: 'user',
-        reportedUser: user.uid,
-        reportedName: user.name,
-        reason: reportReason,
-        reportedBy: currentUser.uid,
-        reportedByName: currentUser.name,
-        timestamp: new Date().getTime(),
-        groupContext: groupInfo.guid,
-        groupName: groupInfo.name
-      });
-
-      // Add tags for filtering
-      groupReport.setTags(['report', 'moderation']);
-      
-      // Send the group report
-      await CometChat.sendMessage(groupReport);
-
-      Alert.alert(
-        'User Reported',
-        'Thank you for your report. We will review it shortly.'
-      );
-      announceToScreenReader('User reported successfully');
-
-    } catch (error) {
-      console.error('Error submitting report:', error);
-      Alert.alert(
-        'Error',
-        'Failed to report user. Please try again.'
-      );
-      announceToScreenReader('Failed to report user');
-    }
-  };
-
-  // Update handleReportUser with clearer categories
-  const handleReportUser = async (user) => {
-    try {
-      Alert.alert(
-        'Report User',
-        `Are you sure you want to report ${user.name}?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Harassment',
-            style: 'destructive',
-            onPress: () => {
-              console.log('Submitting harassment report for:', user.uid);
-              submitReport(user, 'Harassment: User is engaging in harassing behavior');
-            }
-          },
-          {
-            text: 'Inappropriate Content',
-            style: 'destructive',
-            onPress: () => {
-              console.log('Submitting inappropriate content report for:', user.uid);
-              submitReport(user, 'Inappropriate Content: User is sharing inappropriate content');
-            }
-          },
-          {
-            text: 'Spam',
-            style: 'destructive',
-            onPress: () => {
-              console.log('Submitting spam report for:', user.uid);
-              submitReport(user, 'Spam: User is sending spam messages');
-            }
-          },
-          {
-            text: 'Threatening Behavior',
-            style: 'destructive',
-            onPress: () => {
-              console.log('Submitting threatening behavior report for:', user.uid);
-              submitReport(user, 'Threatening Behavior: User is making threats');
-            }
-          }
-        ]
-      );
-    } catch (error) {
-      console.error('Error in handleReportUser:', error);
-      Alert.alert(
-        'Error',
-        'Failed to process report request. Please try again.'
-      );
     }
   };
 
@@ -1045,109 +1010,40 @@ const GroupChatScreen = ({ route, navigation }) => {
     );
   };
 
+  const renderErrorMessage = () => {
+    if (error) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={() => {
+              setError('');
+              fetchMessages();
+            }}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return null;
+  };
+
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      accessible={true}
-      accessibilityLabel="Group Chat Screen"
+    <KeyboardAvoidingView
+      style={[styles.container, isWeb && styles.webContainer]}
+      behavior={Platform.OS === 'ios' ? 'padding' : null}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      <View style={styles.infoButtonContainer}>
-        <TouchableOpacity
-          onPress={() => {
-            announceToScreenReader('Opening group information');
-            setIsModalVisible(true);
-          }}
-          style={styles.infoButton}
-          accessible={true}
-          accessibilityLabel="Group Information"
-          accessibilityHint="Double tap to view group details and members"
-          accessibilityRole="button"
-        >
-          <MaterialCommunityIcons 
-            name="information"
-            size={24}
-            color="#24269B"
-          />
-          <Text style={styles.infoButtonText}>Group Info</Text>
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={item => item.id?.toString()}
-        contentContainerStyle={styles.messageList}
-        accessible={true}
-        accessibilityLabel={`${messages.length} messages`}
-        accessibilityHint="Scroll to read messages"
-      />
-
-      {renderSmartReplies()}
-
-      <View 
-        style={styles.inputContainer}
-        accessible={true}
-        accessibilityLabel="Message input section"
-      >
-        <TouchableOpacity 
-          style={styles.attachButton}
-          onPress={handleAttachment}
-          disabled={isUploading}
-          accessible={true}
-          accessibilityLabel="Attach media"
-          accessibilityHint="Double tap to attach an image or file"
-          accessibilityRole="button"
-          accessibilityState={{ disabled: isUploading }}
-        >
-          <MaterialCommunityIcons 
-            name="attachment" 
-            size={24} 
-            color={isUploading ? '#999' : '#24269B'} 
-          />
-        </TouchableOpacity>
-        
-        <TextInput
-          style={styles.input}
-          value={inputText}
-          onChangeText={setInputText}
-          placeholder="Type a message..."
-          multiline
-          editable={!isUploading}
-          accessible={true}
-          accessibilityLabel="Message input"
-          accessibilityHint="Enter your message here"
-        />
-        
-        <TouchableOpacity 
-          style={styles.sendButton} 
-          onPress={sendMessage}
-          disabled={isUploading || !inputText.trim()}
-          accessible={true}
-          accessibilityLabel="Send message"
-          accessibilityHint="Double tap to send your message"
-          accessibilityRole="button"
-          accessibilityState={{ 
-            disabled: isUploading || !inputText.trim() 
-          }}
-        >
-          <MaterialCommunityIcons 
-            name="send" 
-            size={24} 
-            color={isUploading || !inputText.trim() ? '#999' : '#24269B'} 
-          />
-        </TouchableOpacity>
-      </View>
-
+      {renderErrorMessage()}
+      
+      {/* Group Info Modal */}
       <Modal
         visible={isModalVisible}
-        animationType="slide"
         transparent={true}
-        onRequestClose={() => {
-          announceToScreenReader('Closing group information');
-          setIsModalVisible(false);
-        }}
+        animationType="slide"
+        onRequestClose={() => setIsModalVisible(false)}
       >
         <View 
           style={styles.modalOverlay}
@@ -1260,6 +1156,63 @@ const GroupChatScreen = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
+      
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        renderItem={renderMessage}
+        keyExtractor={item => item.id.toString()}
+        inverted={true}
+        contentContainerStyle={[styles.messageList, isWeb && styles.webMessageList]}
+        ListFooterComponent={renderSmartReplies}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No messages yet</Text>
+            <Text style={styles.emptySubText}>Be the first to send a message!</Text>
+          </View>
+        }
+      />
+      
+      <View style={[styles.inputContainer, isWeb && styles.webInputContainer]}>
+        <TouchableOpacity 
+          style={[styles.attachButton, isWeb && styles.webButton]}
+          onPress={handleAttachment}
+          disabled={isUploading}
+        >
+          <MaterialCommunityIcons name="paperclip" size={24} color="#24269B" />
+        </TouchableOpacity>
+        
+        <TextInput
+          style={[styles.input, isWeb && styles.webInput]}
+          value={inputText}
+          onChangeText={setInputText}
+          placeholder="Type a message..."
+          placeholderTextColor="#999"
+          multiline
+          accessible={true}
+          accessibilityLabel="Message input"
+          accessibilityHint="Type your message here"
+        />
+        
+        <TouchableOpacity 
+          style={[styles.sendButton, isWeb && styles.webButton, !inputText.trim() && styles.disabledButton]}
+          onPress={sendMessage}
+          disabled={!inputText.trim() || isUploading}
+        >
+          <MaterialCommunityIcons 
+            name="send" 
+            size={24} 
+            color={inputText.trim() ? "#24269B" : "#999"} 
+          />
+        </TouchableOpacity>
+      </View>
+      
+      {isUploading && (
+        <View style={styles.uploadingContainer}>
+          <ActivityIndicator size="small" color="#24269B" />
+          <Text style={styles.uploadingText}>Uploading image...</Text>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 };
@@ -1593,6 +1546,94 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     alignSelf: 'flex-end',
+  },
+  webContainer: {
+    maxWidth: 1000,
+    marginHorizontal: 'auto',
+    width: '100%',
+    height: '100%',
+  },
+  webMessageList: {
+    paddingHorizontal: 20,
+  },
+  webInputContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    backgroundColor: '#fff',
+    boxShadow: '0 -2px 10px rgba(0, 0, 0, 0.05)',
+  },
+  webInput: {
+    outlineColor: '#24269B',
+    fontSize: 16,
+    padding: 12,
+  },
+  webButton: {
+    cursor: 'pointer',
+    transition: 'background-color 0.2s ease',
+    ':hover': {
+      backgroundColor: '#f0f0f0',
+    },
+  },
+  errorContainer: {
+    backgroundColor: '#ffebee',
+    borderRadius: 8,
+    padding: 16,
+    margin: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#f44336',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  errorText: {
+    color: '#d32f2f',
+    fontSize: 14,
+    flex: 1,
+  },
+  retryButton: {
+    backgroundColor: '#24269B',
+    borderRadius: 4,
+    padding: 8,
+    marginLeft: 10,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 14,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    marginTop: 50,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginVertical: 10,
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+  },
+  uploadingContainer: {
+    position: 'absolute',
+    bottom: 80,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    padding: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  uploadingText: {
+    color: 'white',
+    marginLeft: 10,
   },
 });
 
