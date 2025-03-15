@@ -47,42 +47,29 @@ const Stack = createNativeStackNavigator();
 const isWeb = Platform.OS === 'web';
 
 // Initialize CometChat for both web and mobile
-const appSettings = new CometChat.AppSettingsBuilder()
-  .subscribePresenceForAllUsers()
-  .setRegion(COMETCHAT_CONSTANTS.REGION)
-  .enableAutoJoinForGroups(true)  // Add this for better group chat handling
-  .build();
-
-// Initialize CometChat
 const initCometChat = async () => {
   try {
-    const response = await CometChat.init(COMETCHAT_CONSTANTS.APP_ID, appSettings);
-    console.log("CometChat initialization successful:", response);
-    
-    if (isWeb) {
-      console.log("CometChat initialized for web platform");
-      // Set source for analytics and debugging
-      CometChat.setSource('web-saw', Platform.OS, 'react-native');
-      
-      // Enable WebSocket for real-time communication on web
-      await CometChat.enableWebSocket(true);
-      
-      // Register service worker if available (for web push notifications)
-      if ('serviceWorker' in navigator) {
-        try {
-          const registration = await navigator.serviceWorker.register('/cometchat-sw.js');
-          console.log('Service worker registered:', registration);
-        } catch (error) {
-          console.error('Service worker registration failed:', error);
-        }
-      }
+    const appID = COMETCHAT_CONSTANTS.APP_ID;
+    const region = COMETCHAT_CONSTANTS.REGION;
+    const appSetting = new CometChat.AppSettingsBuilder()
+      .subscribePresenceForAllUsers()
+      .setRegion(region)
+      .build();
+
+    await CometChat.init(appID, appSetting);
+    console.log('CometChat initialization successful:', true);
+
+    if (Platform.OS === 'web') {
+      console.log('CometChat initialized for web platform');
     }
+
+    return true;
   } catch (error) {
-    console.log("CometChat initialization failed:", error);
-    
-    if (isWeb) {
-      console.error("CometChat web initialization error:", error);
+    console.log('CometChat initialization failed:', error);
+    if (Platform.OS === 'web') {
+      console.log('CometChat web initialization error:', error);
     }
+    return false;
   }
 };
 

@@ -15,13 +15,19 @@ import {
   ActivityIndicator,
   AccessibilityInfo
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CometChat } from '@cometchat-pro/react-native-chat';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { COMETCHAT_CONSTANTS } from '../config/cometChatConfig';
+import { useAccessibility } from '../context/AccessibilityContext';
+
+// Conditional import based on platform
+const CometChatWeb = Platform.OS === 'web' 
+  ? require('@cometchat-pro/chat').CometChat
+  : require('@cometchat-pro/react-native-chat').CometChat;
 
 const containsProfanity = (text) => {
   const profanityList = [
@@ -1045,9 +1051,22 @@ const GroupChatScreen = ({ route, navigation }) => {
     );
   };
 
+  // Add keyboard navigation handlers
+  const handleKeyPress = (e, action) => {
+    if (isWeb) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        action();
+      }
+    }
+  };
+
   return (
     <KeyboardAvoidingView 
-      style={styles.container} 
+      style={[
+        styles.container,
+        isWeb && styles.webContainer
+      ]} 
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       accessible={true}
       accessibilityLabel="Group Chat Screen"
@@ -1058,11 +1077,17 @@ const GroupChatScreen = ({ route, navigation }) => {
             announceToScreenReader('Opening group information');
             setIsModalVisible(true);
           }}
-          style={styles.infoButton}
+          style={[
+            styles.infoButton,
+            isWeb && styles.webButton
+          ]}
           accessible={true}
           accessibilityLabel="Group Information"
           accessibilityHint="Double tap to view group details and members"
           accessibilityRole="button"
+          role="button"
+          tabIndex={0}
+          onKeyPress={(e) => handleKeyPress(e, () => setIsModalVisible(true))}
         >
           <MaterialCommunityIcons 
             name="information"
@@ -1073,32 +1098,51 @@ const GroupChatScreen = ({ route, navigation }) => {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={item => item.id?.toString()}
-        contentContainerStyle={styles.messageList}
-        accessible={true}
-        accessibilityLabel={`${messages.length} messages`}
-        accessibilityHint="Scroll to read messages"
-      />
+      {isWeb ? (
+        <ScrollView 
+          style={styles.webMessageList}
+          ref={flatListRef}
+          contentContainerStyle={styles.messageList}
+        >
+          {messages.map((item) => renderMessage({ item }))}
+        </ScrollView>
+      ) : (
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={item => item.id?.toString()}
+          contentContainerStyle={styles.messageList}
+          accessible={true}
+          accessibilityLabel={`${messages.length} messages`}
+          accessibilityHint="Scroll to read messages"
+        />
+      )}
 
       {renderSmartReplies()}
 
       <View 
-        style={styles.inputContainer}
+        style={[
+          styles.inputContainer,
+          isWeb && styles.webInputContainer
+        ]}
         accessible={true}
         accessibilityLabel="Message input section"
       >
         <TouchableOpacity 
-          style={styles.attachButton}
+          style={[
+            styles.attachButton,
+            isWeb && styles.webButton
+          ]}
           onPress={handleAttachment}
           disabled={isUploading}
           accessible={true}
           accessibilityLabel="Attach media"
           accessibilityHint="Double tap to attach an image or file"
           accessibilityRole="button"
+          role="button"
+          tabIndex={0}
+          onKeyPress={(e) => handleKeyPress(e, handleAttachment)}
           accessibilityState={{ disabled: isUploading }}
         >
           <MaterialCommunityIcons 
@@ -1109,7 +1153,10 @@ const GroupChatScreen = ({ route, navigation }) => {
         </TouchableOpacity>
         
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            isWeb && styles.webInput
+          ]}
           value={inputText}
           onChangeText={setInputText}
           placeholder="Type a message..."
@@ -1118,16 +1165,28 @@ const GroupChatScreen = ({ route, navigation }) => {
           accessible={true}
           accessibilityLabel="Message input"
           accessibilityHint="Enter your message here"
+          onKeyPress={(e) => {
+            if (isWeb && e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              sendMessage();
+            }
+          }}
         />
         
         <TouchableOpacity 
-          style={styles.sendButton} 
+          style={[
+            styles.sendButton,
+            isWeb && styles.webButton
+          ]}
           onPress={sendMessage}
           disabled={isUploading || !inputText.trim()}
           accessible={true}
           accessibilityLabel="Send message"
           accessibilityHint="Double tap to send your message"
           accessibilityRole="button"
+          role="button"
+          tabIndex={0}
+          onKeyPress={(e) => handleKeyPress(e, sendMessage)}
           accessibilityState={{ 
             disabled: isUploading || !inputText.trim() 
           }}
@@ -1140,46 +1199,45 @@ const GroupChatScreen = ({ route, navigation }) => {
         </TouchableOpacity>
       </View>
 
-      <Modal
-        visible={isModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => {
-          announceToScreenReader('Closing group information');
-          setIsModalVisible(false);
-        }}
-      >
-        <View 
-          style={styles.modalOverlay}
-          accessible={true}
-          accessibilityLabel="Group Information Modal"
-          accessibilityViewIsModal={true}
+      {isWeb ? (
+        <div 
+          style={isModalVisible ? styles.webModalOverlay : { display: 'none' }}
+          onClick={() => setIsModalVisible(false)}
         >
-          <View style={styles.modalContent}>
+          <div 
+            style={styles.webModal}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-title"
+          >
+            {/* Modal content */}
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Group Information</Text>
+              <Text 
+                id="modal-title"
+                style={styles.modalTitle}
+              >
+                Group Information
+              </Text>
               <TouchableOpacity 
-                onPress={() => {
-                  announceToScreenReader('Closing group information');
-                  setIsModalVisible(false);
-                }}
-                style={styles.closeButton}
+                onPress={() => setIsModalVisible(false)}
+                style={[styles.closeButton, isWeb && styles.webButton]}
                 accessible={true}
                 accessibilityLabel="Close group information"
                 accessibilityRole="button"
+                role="button"
+                tabIndex={0}
+                onKeyPress={(e) => handleKeyPress(e, () => setIsModalVisible(false))}
               >
                 <MaterialCommunityIcons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
             
-            {groupInfo?.owner === currentUser?.uid && groupInfo?.type === CometChat.GROUP_TYPE.PRIVATE && (
-              <View 
-                style={styles.groupNameContainer}
-                accessible={true}
-                accessibilityLabel="Group name section"
-              >
+            {/* Group name update section */}
+            {groupInfo?.owner === currentUser?.uid && (
+              <View style={styles.groupNameContainer}>
                 <TextInput
-                  style={styles.groupNameInput}
+                  style={[styles.groupNameInput, isWeb && styles.webGroupNameInput]}
                   value={newGroupName}
                   onChangeText={setNewGroupName}
                   placeholder="Enter new group name"
@@ -1189,77 +1247,196 @@ const GroupChatScreen = ({ route, navigation }) => {
                   accessibilityHint="Enter a new name for the group"
                 />
                 <TouchableOpacity 
-                  style={styles.updateButton}
-                  onPress={() => {
-                    announceToScreenReader('Updating group name');
-                    updateGroupName();
-                  }}
+                  style={[styles.updateButton, isWeb && styles.webUpdateButton]}
+                  onPress={updateGroupName}
                   accessible={true}
                   accessibilityLabel="Update group name"
                   accessibilityRole="button"
+                  role="button"
+                  tabIndex={0}
+                  onKeyPress={(e) => handleKeyPress(e, updateGroupName)}
                 >
                   <Text style={styles.updateButtonText}>Update Name</Text>
                 </TouchableOpacity>
               </View>
             )}
 
-            {groupInfo?.owner === currentUser?.uid && groupInfo?.type === CometChat.GROUP_TYPE.PUBLIC && (
-              <View style={styles.publicGroupInfo}>
-                <Text style={styles.publicGroupText}>
-                  Public group names cannot be changed
-                </Text>
-              </View>
-            )}
-
-            <Text 
-              style={styles.membersTitle}
-              accessible={true}
-              accessibilityRole="header"
-            >
+            {/* Members list */}
+            <Text style={styles.membersTitle}>
               Members ({members.length}):
             </Text>
             
-            <FlatList
-              data={members}
-              keyExtractor={item => item.uid}
-              renderItem={renderMember}
-              style={styles.membersList}
-              accessible={true}
-              accessibilityLabel="Group members list"
-            />
+            {isWeb ? (
+              <ScrollView style={styles.membersList}>
+                {members.map((item) => (
+                  <View 
+                    key={item.uid}
+                    style={[styles.memberCard, isWeb && styles.webMemberCard]}
+                  >
+                    {renderMember({ item })}
+                  </View>
+                ))}
+              </ScrollView>
+            ) : (
+              <FlatList
+                data={members}
+                keyExtractor={item => item.uid}
+                renderItem={renderMember}
+                style={styles.membersList}
+              />
+            )}
 
+            {/* Group actions */}
             {groupInfo?.owner === currentUser?.uid && (
               <TouchableOpacity 
-                style={[styles.leaveButton, { backgroundColor: '#ff4444' }]}
-                onPress={() => {
-                  announceToScreenReader('Deleting group');
-                  deleteGroup();
-                }}
+                style={[styles.leaveButton, isWeb && styles.webLeaveButton]}
+                onPress={deleteGroup}
                 accessible={true}
                 accessibilityLabel="Delete group"
                 accessibilityHint="Double tap to permanently delete this group"
                 accessibilityRole="button"
+                role="button"
+                tabIndex={0}
+                onKeyPress={(e) => handleKeyPress(e, deleteGroup)}
               >
                 <Text style={styles.leaveButtonText}>Delete Group</Text>
               </TouchableOpacity>
             )}
 
             <TouchableOpacity 
-              style={styles.leaveButton}
-              onPress={() => {
-                announceToScreenReader('Leaving group');
-                leaveGroup();
-              }}
+              style={[styles.leaveButton, isWeb && styles.webLeaveButton]}
+              onPress={leaveGroup}
               accessible={true}
               accessibilityLabel="Leave group"
               accessibilityHint="Double tap to leave this group"
               accessibilityRole="button"
+              role="button"
+              tabIndex={0}
+              onKeyPress={(e) => handleKeyPress(e, leaveGroup)}
             >
               <Text style={styles.leaveButtonText}>Leave Group</Text>
             </TouchableOpacity>
+          </div>
+        </div>
+      ) : (
+        <Modal
+          visible={isModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setIsModalVisible(false)}
+        >
+          <View 
+            style={styles.modalOverlay}
+            accessible={true}
+            accessibilityLabel="Group Information Modal"
+            accessibilityViewIsModal={true}
+          >
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Group Information</Text>
+                <TouchableOpacity 
+                  onPress={() => {
+                    announceToScreenReader('Closing group information');
+                    setIsModalVisible(false);
+                  }}
+                  style={styles.closeButton}
+                  accessible={true}
+                  accessibilityLabel="Close group information"
+                  accessibilityRole="button"
+                >
+                  <MaterialCommunityIcons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+              
+              {groupInfo?.owner === currentUser?.uid && groupInfo?.type === CometChat.GROUP_TYPE.PRIVATE && (
+                <View 
+                  style={styles.groupNameContainer}
+                  accessible={true}
+                  accessibilityLabel="Group name section"
+                >
+                  <TextInput
+                    style={styles.groupNameInput}
+                    value={newGroupName}
+                    onChangeText={setNewGroupName}
+                    placeholder="Enter new group name"
+                    placeholderTextColor="#666"
+                    accessible={true}
+                    accessibilityLabel="New group name input"
+                    accessibilityHint="Enter a new name for the group"
+                  />
+                  <TouchableOpacity 
+                    style={styles.updateButton}
+                    onPress={() => {
+                      announceToScreenReader('Updating group name');
+                      updateGroupName();
+                    }}
+                    accessible={true}
+                    accessibilityLabel="Update group name"
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.updateButtonText}>Update Name</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {groupInfo?.owner === currentUser?.uid && groupInfo?.type === CometChat.GROUP_TYPE.PUBLIC && (
+                <View style={styles.publicGroupInfo}>
+                  <Text style={styles.publicGroupText}>
+                    Public group names cannot be changed
+                  </Text>
+                </View>
+              )}
+
+              <Text 
+                style={styles.membersTitle}
+                accessible={true}
+                accessibilityRole="header"
+              >
+                Members ({members.length}):
+              </Text>
+              
+              <FlatList
+                data={members}
+                keyExtractor={item => item.uid}
+                renderItem={renderMember}
+                style={styles.membersList}
+                accessible={true}
+                accessibilityLabel="Group members list"
+              />
+
+              {groupInfo?.owner === currentUser?.uid && (
+                <TouchableOpacity 
+                  style={[styles.leaveButton, { backgroundColor: '#ff4444' }]}
+                  onPress={() => {
+                    announceToScreenReader('Deleting group');
+                    deleteGroup();
+                  }}
+                  accessible={true}
+                  accessibilityLabel="Delete group"
+                  accessibilityHint="Double tap to permanently delete this group"
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.leaveButtonText}>Delete Group</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity 
+                style={styles.leaveButton}
+                onPress={() => {
+                  announceToScreenReader('Leaving group');
+                  leaveGroup();
+                }}
+                accessible={true}
+                accessibilityLabel="Leave group"
+                accessibilityHint="Double tap to leave this group"
+                accessibilityRole="button"
+              >
+                <Text style={styles.leaveButtonText}>Leave Group</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
     </KeyboardAvoidingView>
   );
 };
@@ -1593,6 +1770,154 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     alignSelf: 'flex-end',
+  },
+  // Web-specific styles
+  webContainer: {
+    maxWidth: 1200,
+    marginHorizontal: 'auto',
+    height: '100vh',
+    backgroundColor: '#ffffff',
+  },
+  webMessageList: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: 20,
+  },
+  webMessageContainer: {
+    marginBottom: 16,
+    transition: 'transform 0.2s ease',
+    ':hover': {
+      transform: 'translateY(-2px)',
+    },
+  },
+  webMessageBubble: {
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+    padding: 16,
+    borderRadius: 12,
+    maxWidth: '70%',
+  },
+  webInputContainer: {
+    position: 'sticky',
+    bottom: 0,
+    backgroundColor: '#ffffff',
+    borderTop: '1px solid #e0e0e0',
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  webInput: {
+    flex: 1,
+    marginHorizontal: 12,
+    padding: 12,
+    borderRadius: 24,
+    backgroundColor: '#f5f5f5',
+    fontSize: 16,
+    outline: 'none',
+    border: '1px solid #e0e0e0',
+    ':focus': {
+      borderColor: '#24269B',
+      boxShadow: '0 0 0 2px rgba(36, 38, 155, 0.1)',
+    },
+  },
+  webButton: {
+    cursor: 'pointer',
+    transition: 'transform 0.2s ease',
+    ':hover': {
+      transform: 'scale(1.1)',
+    },
+    ':focus': {
+      outline: '2px solid #24269B',
+      outlineOffset: '2px',
+    },
+  },
+  webModal: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 24,
+    maxWidth: 600,
+    width: '90%',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+  },
+  webModalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  webMemberCard: {
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      backgroundColor: '#f5f5f5',
+      transform: 'translateY(-2px)',
+    },
+    ':focus': {
+      outline: '2px solid #24269B',
+      outlineOffset: '2px',
+    },
+  },
+  webAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  webGroupNameInput: {
+    width: '100%',
+    padding: 12,
+    borderRadius: 8,
+    border: '1px solid #e0e0e0',
+    fontSize: 16,
+    marginBottom: 16,
+    ':focus': {
+      borderColor: '#24269B',
+      outline: 'none',
+      boxShadow: '0 0 0 2px rgba(36, 38, 155, 0.1)',
+    },
+  },
+  webUpdateButton: {
+    backgroundColor: '#24269B',
+    color: '#ffffff',
+    padding: '12px 24px',
+    borderRadius: 8,
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 16,
+    fontWeight: '600',
+    transition: 'background-color 0.2s ease',
+    ':hover': {
+      backgroundColor: '#1a1b6e',
+    },
+    ':focus': {
+      outline: '2px solid #24269B',
+      outlineOffset: '2px',
+    },
+  },
+  webLeaveButton: {
+    backgroundColor: '#ff4444',
+    color: '#ffffff',
+    padding: '12px 24px',
+    borderRadius: 8,
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 16,
+    fontWeight: '600',
+    transition: 'background-color 0.2s ease',
+    marginTop: 16,
+    ':hover': {
+      backgroundColor: '#cc0000',
+    },
+    ':focus': {
+      outline: '2px solid #ff4444',
+      outlineOffset: '2px',
+    },
   },
 });
 

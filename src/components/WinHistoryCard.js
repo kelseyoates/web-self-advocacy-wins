@@ -5,12 +5,15 @@ import {
   Image,
   StyleSheet,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { Video } from 'expo-av';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { format } from 'date-fns';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+
+const isWeb = Platform.OS === 'web';
 
 const WinHistoryCard = ({ win, onPress }) => {
   console.log('WinHistoryCard full win data:', win);
@@ -36,7 +39,7 @@ const WinHistoryCard = ({ win, onPress }) => {
 
   return (
     <TouchableOpacity 
-      style={styles.container} 
+      style={[styles.container, isWeb && styles.webContainer]} 
       onPress={onPress}
       activeOpacity={0.7}
       accessible={true}
@@ -45,19 +48,19 @@ const WinHistoryCard = ({ win, onPress }) => {
       accessibilityHint="Double tap to view win details"
     >
       <View 
-        style={styles.content}
+        style={[styles.content, isWeb && styles.webContent]}
         accessible={true}
         accessibilityRole="text"
       >
         <Text 
-          style={styles.title}
+          style={[styles.title, isWeb && styles.webTitle]}
           accessibilityRole="header"
         >
           {win.text}
         </Text>
         {win.localTimestamp && (
           <Text 
-            style={styles.timestamp}
+            style={[styles.timestamp, isWeb && styles.webTimestamp]}
             accessibilityRole="text"
           >
             {formattedTime}
@@ -67,27 +70,25 @@ const WinHistoryCard = ({ win, onPress }) => {
       
       {win.mediaUrl && win.mediaType === 'photo' && (
         <View 
-          style={styles.imageContainer}
+          style={[styles.imageContainer, isWeb && styles.webImageContainer]}
           accessible={true}
           accessibilityRole="image"
           accessibilityLabel={win.altText || "Photo attached to win"}
         >
           <Image
             source={{ uri: win.mediaUrl }}
-            style={styles.image}
+            style={[styles.image, isWeb && styles.webImage]}
             resizeMode="cover"
             accessible={true}
             accessibilityRole="image"
             accessibilityLabel={win.altText || "Photo attached to win"}
-            onError={(error) => console.log('Image loading error:', error.nativeEvent.error)}
-            onLoad={() => console.log('Image loaded successfully:', win.mediaUrl)}
           />
         </View>
       )}
 
       {win.comments && win.comments.length > 0 && (
         <View 
-          style={styles.commentsContainer}
+          style={[styles.commentsContainer, isWeb && styles.webCommentsContainer]}
           accessible={true}
           accessibilityRole="text"
           accessibilityLabel={`${win.comments.length} comments`}
@@ -95,7 +96,7 @@ const WinHistoryCard = ({ win, onPress }) => {
           {win.comments.map((comment, index) => (
             <Text 
               key={index} 
-              style={styles.comment}
+              style={[styles.comment, isWeb && styles.webComment]}
               accessibilityRole="text"
             >
               {comment.text}
@@ -106,7 +107,7 @@ const WinHistoryCard = ({ win, onPress }) => {
 
       {win.cheers > 0 && (
         <View 
-          style={styles.cheersContainer}
+          style={[styles.cheersContainer, isWeb && styles.webCheersContainer]}
           accessible={true}
           accessibilityRole="text"
           accessibilityLabel={`${win.cheers} cheers`}
@@ -118,7 +119,7 @@ const WinHistoryCard = ({ win, onPress }) => {
             accessibilityRole="image"
             accessibilityLabel="Heart icon"
           />
-          <Text style={styles.cheersText}>{win.cheers}</Text>
+          <Text style={[styles.cheersText, isWeb && styles.webCheersText]}>{win.cheers}</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -142,10 +143,24 @@ const styles = StyleSheet.create({
     elevation: 5,
     borderWidth: 1,
     borderColor: '#eee',
-    minHeight: 80, // Ensure minimum touch target size
+    minHeight: 80,
+  },
+  webContainer: {
+    cursor: 'pointer',
+    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+    ':hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+    },
+    maxWidth: 800,
+    marginLeft: 'auto',
+    marginRight: 'auto',
   },
   content: {
     marginBottom: 10,
+  },
+  webContent: {
+    padding: 5,
   },
   title: {
     fontSize: 16,
@@ -153,11 +168,18 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     color: '#24269B',
   },
+  webTitle: {
+    fontSize: 18,
+    lineHeight: 1.4,
+  },
   timestamp: {
     fontSize: 12,
     color: '#999',
     fontStyle: 'italic',
     marginBottom: 10,
+  },
+  webTimestamp: {
+    fontSize: 14,
   },
   imageContainer: {
     width: '100%',
@@ -166,9 +188,16 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#f0f0f0',
   },
+  webImageContainer: {
+    height: 300,
+    borderRadius: 12,
+  },
   image: {
     width: '100%',
     height: '100%',
+  },
+  webImage: {
+    objectFit: 'cover',
   },
   commentsContainer: {
     marginTop: 10,
@@ -176,20 +205,34 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#eee',
   },
+  webCommentsContainer: {
+    padding: 10,
+  },
   comment: {
     fontSize: 14,
     color: '#666',
     marginBottom: 5,
+  },
+  webComment: {
+    fontSize: 15,
+    lineHeight: 1.4,
+    padding: 5,
   },
   cheersContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 10,
   },
+  webCheersContainer: {
+    padding: 5,
+  },
   cheersText: {
     fontSize: 14,
     color: '#666',
     marginLeft: 5,
+  },
+  webCheersText: {
+    fontSize: 15,
   },
 });
 

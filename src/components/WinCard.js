@@ -13,9 +13,6 @@ import Animated, {
 import { doc, getDoc, updateDoc, arrayUnion, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
 
-
-
-
 const PRESET_COMMENTS = [
   "Amazing work! Keep shining 🌟",
   "You're unstoppable! 🚀💪",
@@ -117,8 +114,9 @@ const PRESET_COMMENTS = [
   "You're just getting started! 🚀💥",
   "Keep up the awesome work! 👏🌟",
   "Love watching you succeed! 💫🎉",
-  ];
+];
 
+const isWeb = Platform.OS === 'web';
 
 const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = false }) => {
   const videoRef = useRef(null);
@@ -327,7 +325,6 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
     }
   };
 
-
   const handleShowCommentOptions = () => {
     setShowComments(!showComments);
   };
@@ -361,7 +358,6 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
       Alert.alert('Error', `Failed to add comment: ${error.message}`);
     }
   };
-
 
   const renderComments = () => {
     if (comments.length === 0) return null;
@@ -489,7 +485,7 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
 
   return (
     <View 
-      style={styles.card}
+      style={[styles.card, isWeb && styles.webCard]}
       accessible={true}
       accessibilityRole="button"
       accessibilityLabel={`Win posted by ${win.username} ${formatTimestamp(win.localTimestamp)}. ${
@@ -502,27 +498,23 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
           ''
       }${cheerCount} cheers. ${
         comments.length > 0 ? 
-          `${comments.length} comments. Most recent comments: ${
-            comments.slice(0, 3).map(comment => 
-              `${comment.text}`
-            ).join('. ')
-          }` : 
+          `${comments.length} comments.` : 
           'No comments yet.'
       }`}
       accessibilityHint="Double tap to interact with this win"
     >
       <View 
-        style={styles.userInfo}
+        style={[styles.userInfo, isWeb && styles.webUserInfo]}
         accessible={true}
         accessibilityRole="header"
       >
         {renderProfilePicture()}
-        <View style={styles.userInfoContent} accessible={true}>
-          <Text style={styles.username}>
+        <View style={[styles.userInfoContent, isWeb && styles.webUserInfoContent]} accessible={true}>
+          <Text style={[styles.username, isWeb && styles.webUsername]}>
             {win.username}
           </Text>
           <Text 
-            style={styles.timestamp}
+            style={[styles.timestamp, isWeb && styles.webTimestamp]}
             accessibilityLabel={`Posted ${formatTimestamp(win.localTimestamp)}`}
           >
             {formatTimestamp(win.localTimestamp)}
@@ -530,7 +522,7 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
         </View>
         {onDeleteWin && (
           <TouchableOpacity
-            style={styles.deleteButton}
+            style={[styles.deleteButton, isWeb && styles.webDeleteButton]}
             onPress={() => {
               Alert.alert(
                 'Delete Win',
@@ -565,7 +557,7 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
 
       {win.text && (
         <Text 
-          style={styles.text}
+          style={[styles.text, isWeb && styles.webText]}
           accessible={true}
           accessibilityRole="text"
           accessibilityLabel={`Win description: ${win.text}`}
@@ -574,12 +566,46 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
         </Text>
       )}
       
-      {renderMedia()}
+      {win.mediaUrl && win.mediaType === 'video' && (
+        <View 
+          style={[styles.mediaContainer, isWeb && styles.webMediaContainer]}
+          accessible={true}
+          accessibilityRole="text"
+          accessibilityLabel="Video content"
+        >
+          <Video
+            ref={videoRef}
+            source={{ uri: win.mediaUrl }}
+            style={[styles.video, isWeb && styles.webVideo]}
+            resizeMode="contain"
+            shouldPlay={false}
+            useNativeControls={true}
+            posterStyle={{ width: '100%', height: '100%' }}
+          />
+        </View>
+      )}
 
-   
-      <View style={styles.footer}>
+      {win.mediaUrl && win.mediaType === 'photo' && (
+        <View 
+          style={[styles.mediaContainer, isWeb && styles.webMediaContainer]}
+          accessible={true}
+          accessibilityRole="image"
+          accessibilityLabel={win.altText || "Photo shared with win"}
+        >
+          <Image
+            source={{ uri: win.mediaUrl }}
+            style={[styles.media, isWeb && styles.webMedia]}
+            resizeMode="contain"
+            accessible={true}
+            accessibilityRole="image"
+            accessibilityLabel={win.altText || "Photo shared with win"}
+          />
+        </View>
+      )}
+
+      <View style={[styles.footer, isWeb && styles.webFooter]}>
         <TouchableOpacity 
-          style={styles.footerButton}
+          style={[styles.footerButton, isWeb && styles.webFooterButton]}
           onPress={handleCheer}
           disabled={isUpdating}
           accessible={true}
@@ -588,11 +614,11 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
           accessibilityState={{ disabled: isUpdating }}
         >
           <Text style={styles.cheerEmoji}>👏</Text>
-          <Text style={styles.cheerCount}>{cheerCount}</Text>
+          <Text style={[styles.cheerCount, isWeb && styles.webCheerCount]}>{cheerCount}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={styles.footerButton}
+          style={[styles.footerButton, isWeb && styles.webFooterButton]}
           onPress={handleShowCommentOptions}
           accessible={true}
           accessibilityLabel="Add comment"
@@ -600,7 +626,7 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
         >
           <Image
             source={require('../../assets/new-comment.png')}
-            style={styles.actionIcon}
+            style={[styles.actionIcon, isWeb && styles.webActionIcon]}
             accessibilityRole="image"
             accessible={true}
             accessibilityLabel="Add comment"
@@ -608,7 +634,7 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={styles.footerButton}
+          style={[styles.footerButton, isWeb && styles.webFooterButton]}
           onPress={handleShare}
           accessible={true}
           accessibilityLabel="Share this win"
@@ -616,7 +642,7 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
         >
           <Image
             source={require('../../assets/arrow-share.png')}
-            style={styles.actionIcon}
+            style={[styles.actionIcon, isWeb && styles.webActionIcon]}
             accessibilityRole="image"
             accessible={true}
             accessibilityLabel="Share"
@@ -624,11 +650,9 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
         </TouchableOpacity>
       </View>
 
-
-
       {showComments && (
         <View 
-          style={styles.commentOptions}
+          style={[styles.commentOptions, isWeb && styles.webCommentOptions]}
           accessible={true}
           accessibilityRole="text"
           accessibilityLabel="Comment options"
@@ -636,14 +660,16 @@ const WinCard = ({ win, onCheersPress, onCommentsPress, onDeleteWin, lazyLoad = 
           {randomComments.map((comment, index) => (
             <TouchableOpacity
               key={index}
-              style={styles.commentOption}
+              style={[styles.commentOption, isWeb && styles.webCommentOption]}
               onPress={() => handleAddComment(comment)}
               accessible={true}
               accessibilityRole="button"
               accessibilityLabel={comment}
               accessibilityHint="Double tap to add this comment"
             >
-              <Text style={styles.commentOptionText}>{comment}</Text>
+              <Text style={[styles.commentOptionText, isWeb && styles.webCommentOptionText]}>
+                {comment}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -1002,6 +1028,86 @@ const styles = StyleSheet.create({
   deleteButton: {
     padding: 8,
     marginLeft: 'auto',
+  },
+  webCard: {
+    maxWidth: 800,
+    marginLeft: 'auto',
+    marginRight: 'auto',
+    cursor: 'default',
+    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+  },
+  webUserInfo: {
+    padding: 10,
+  },
+  webUserInfoContent: {
+    marginLeft: 15,
+  },
+  webUsername: {
+    fontSize: 18,
+  },
+  webTimestamp: {
+    fontSize: 14,
+  },
+  webText: {
+    fontSize: 16,
+    lineHeight: 1.5,
+    padding: 10,
+  },
+  webMediaContainer: {
+    maxHeight: 500,
+    borderRadius: 12,
+    marginVertical: 15,
+  },
+  webVideo: {
+    maxHeight: 500,
+  },
+  webMedia: {
+    maxHeight: 500,
+    objectFit: 'contain',
+  },
+  webFooter: {
+    padding: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    marginTop: 10,
+  },
+  webFooterButton: {
+    padding: 8,
+    cursor: 'pointer',
+    transition: 'transform 0.2s ease',
+    ':hover': {
+      transform: 'scale(1.1)',
+    },
+  },
+  webActionIcon: {
+    width: 30,
+    height: 30,
+  },
+  webCheerCount: {
+    fontSize: 16,
+  },
+  webCommentOptions: {
+    padding: 15,
+    gap: 10,
+  },
+  webCommentOption: {
+    padding: 12,
+    cursor: 'pointer',
+    transition: 'background-color 0.2s ease',
+    ':hover': {
+      backgroundColor: '#f5f5f5',
+    },
+  },
+  webCommentOptionText: {
+    fontSize: 15,
+    lineHeight: 1.4,
+  },
+  webDeleteButton: {
+    cursor: 'pointer',
+    padding: 10,
+    ':hover': {
+      opacity: 0.8,
+    },
   },
 });
 

@@ -6,17 +6,21 @@ import {
   StyleSheet,
   ActivityIndicator,
   Dimensions,
-  Image
+  Image,
+  Platform,
+  ScrollView
 } from 'react-native';
-import { CometChat } from '@cometchat-pro/react-native-chat';
+import { CometChat } from '@cometchat-pro/chat';
 import { COMETCHAT_CONSTANTS } from '../config/cometChatConfig';
+
+const isWeb = Platform.OS === 'web';
 
 const SupportedUserChatDetailsScreen = ({ route, navigation }) => {
   const { conversation, supportedUser } = route.params;
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [originalUser, setOriginalUser] = useState(null);
-  const flatListRef = useRef();
+  const scrollViewRef = useRef();
 
   useEffect(() => {
     navigation.setOptions({
@@ -77,7 +81,7 @@ const SupportedUserChatDetailsScreen = ({ route, navigation }) => {
           if (message.conversationId === conversation.conversationId) {
             setMessages(prev => [...prev, message]);
             // Scroll to bottom on new message
-            flatListRef.current?.scrollToEnd({ animated: true });
+            scrollViewRef.current?.scrollToEnd({ animated: true });
           }
         }
       })
@@ -104,18 +108,24 @@ const SupportedUserChatDetailsScreen = ({ route, navigation }) => {
     return (
       <View style={[
         styles.messageContainer,
-        isSupported ? styles.supportedMessage : styles.otherMessage
+        isSupported ? styles.supportedMessage : styles.otherMessage,
+        isWeb && styles.webMessageContainer
       ]}>
         <View style={[
           styles.messageBubble,
-          isSupported ? styles.supportedBubble : styles.otherBubble
+          isSupported ? styles.supportedBubble : styles.otherBubble,
+          isWeb && styles.webMessageBubble
         ]}>
           {/* Handle image messages */}
           {item.type === 'image' && (
             <Image
               source={{ uri: item.data.url }}
-              style={styles.mediaContent}
+              style={[
+                styles.mediaContent,
+                isWeb && styles.webMediaContent
+              ]}
               resizeMode="contain"
+              alt={`Image sent by ${item.sender.name}`}
             />
           )}
 
@@ -123,13 +133,19 @@ const SupportedUserChatDetailsScreen = ({ route, navigation }) => {
           {item.text && (
             <Text style={[
               styles.messageText,
-              isSupported ? styles.supportedText : styles.otherText
+              isSupported ? styles.supportedText : styles.otherText,
+              isWeb && styles.webMessageText
             ]}>
               {item.text}
             </Text>
           )}
           
-          <Text style={styles.timestamp}>{timestamp}</Text>
+          <Text style={[
+            styles.timestamp,
+            isWeb && styles.webTimestamp
+          ]}>
+            {timestamp}
+          </Text>
         </View>
       </View>
     );
@@ -137,24 +153,51 @@ const SupportedUserChatDetailsScreen = ({ route, navigation }) => {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[
+        styles.loadingContainer,
+        isWeb && styles.webLoadingContainer
+      ]}>
         <ActivityIndicator size="large" color="#0000ff" />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.readOnlyBanner}>Read Only View</Text>
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={item => item.id.toString()}
-        contentContainerStyle={styles.messagesList}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
-        onLayout={() => flatListRef.current?.scrollToEnd()}
-      />
+    <View style={[
+      styles.container,
+      isWeb && styles.webContainer
+    ]}>
+      <Text style={[
+        styles.readOnlyBanner,
+        isWeb && styles.webReadOnlyBanner
+      ]}>
+        Read Only View
+      </Text>
+      
+      {isWeb ? (
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.webMessagesList}
+          contentContainerStyle={styles.messagesList}
+          onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+        >
+          {messages.map((item) => (
+            <React.Fragment key={item.id}>
+              {renderMessage({ item })}
+            </React.Fragment>
+          ))}
+        </ScrollView>
+      ) : (
+        <FlatList
+          ref={scrollViewRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={item => item.id.toString()}
+          contentContainerStyle={styles.messagesList}
+          onContentSizeChange={() => scrollViewRef.current?.scrollToEnd()}
+          onLayout={() => scrollViewRef.current?.scrollToEnd()}
+        />
+      )}
     </View>
   );
 };
@@ -226,7 +269,58 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 8,
     marginVertical: 4,
-  }
+  },
+  // Web-specific styles
+  webContainer: {
+    maxWidth: 1200,
+    marginHorizontal: 'auto',
+    height: '100vh',
+    backgroundColor: '#ffffff',
+  },
+  webLoadingContainer: {
+    height: '100vh',
+  },
+  webMessagesList: {
+    flex: 1,
+    padding: 24,
+  },
+  webMessageContainer: {
+    marginBottom: 16,
+    transition: 'transform 0.2s ease',
+    ':hover': {
+      transform: 'translateY(-2px)',
+    },
+  },
+  webMessageBubble: {
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+    padding: 16,
+    borderRadius: 12,
+    maxWidth: '70%',
+  },
+  webMessageText: {
+    fontSize: 16,
+    lineHeight: 1.5,
+  },
+  webTimestamp: {
+    fontSize: 12,
+    marginTop: 4,
+    opacity: 0.7,
+  },
+  webMediaContent: {
+    maxWidth: 400,
+    maxHeight: 400,
+    borderRadius: 8,
+    marginVertical: 8,
+  },
+  webReadOnlyBanner: {
+    backgroundColor: '#FFE4E1',
+    color: '#FF6B6B',
+    padding: 12,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    borderBottom: '1px solid #FFD1D1',
+  },
 });
 
 export default SupportedUserChatDetailsScreen; 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -8,16 +8,23 @@ import {
   Image,
   ActivityIndicator,
   AccessibilityInfo,
-  Alert
+  Alert,
+  Platform,
+  ScrollView
 } from 'react-native';
-import { CometChat } from '@cometchat-pro/react-native-chat';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+// Conditional import based on platform
+const CometChat = Platform.OS === 'web' 
+  ? require('@cometchat-pro/chat').CometChat
+  : require('@cometchat-pro/react-native-chat').CometChat;
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { isSupporterFor } from '../services/cometChat';
 import { auth } from '../config/firebase';
 import { useAccessibility } from '../context/AccessibilityContext';
+
+const isWeb = Platform.OS === 'web';
 
 const ChatMainScreen = ({ navigation }) => {
   const [conversations, setConversations] = useState([]);
@@ -30,26 +37,54 @@ const ChatMainScreen = ({ navigation }) => {
   const { showHelpers } = useAccessibility();
   const [blockedUsers, setBlockedUsers] = useState(new Set());
 
+  // Add refs for keyboard navigation
+  const conversationRefs = useRef({});
+  const [focusedConversation, setFocusedConversation] = useState(null);
+
+  // Add keyboard navigation handler
+  const handleKeyPress = (e, onPress, item) => {
+    if (isWeb) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onPress();
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const currentIndex = conversations.findIndex(conv => conv.conversationId === item.conversationId);
+        const nextIndex = e.key === 'ArrowDown' 
+          ? Math.min(currentIndex + 1, conversations.length - 1)
+          : Math.max(currentIndex - 1, 0);
+        const nextConversation = conversations[nextIndex];
+        if (nextConversation) {
+          setFocusedConversation(nextConversation.conversationId);
+          conversationRefs.current[nextConversation.conversationId]?.focus();
+        }
+      }
+    }
+  };
+
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
         <View style={styles.buttonContainer}>
-          <View style={styles.buttonShadow} />
           <TouchableOpacity 
             onPress={() => {
               announceToScreenReader('Starting new chat');
               navigation.navigate('NewChat');
             }}
-            style={styles.newChatButton}
+            style={[
+              styles.newChatButton,
+              isWeb && styles.webNewChatButton
+            ]}
             accessible={true}
             accessibilityLabel="Start new chat"
             accessibilityHint="Opens screen to start a new conversation"
             accessibilityRole="button"
+            role="button"
+            tabIndex={0}
           >
             <View style={styles.buttonContent}>
-              <Text style={styles.newChatButtonText}>
-                New Chat <MaterialCommunityIcons name="message-plus" size={24} color="#24269B" />
-              </Text>
+              <MaterialCommunityIcons name="message-plus" size={24} color="#24269B" />
+              <Text style={styles.newChatButtonText}>New Chat</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -209,7 +244,12 @@ const ChatMainScreen = ({ navigation }) => {
   }, []);
 
   const announceToScreenReader = (message) => {
-    if (isScreenReaderEnabled) {
+    if (isWeb) {
+      const ariaLive = document.getElementById('aria-live-region');
+      if (ariaLive) {
+        ariaLive.textContent = message;
+      }
+    } else if (isScreenReaderEnabled) {
       AccessibilityInfo.announceForAccessibility(message);
     }
   };
@@ -399,16 +439,10 @@ const ChatMainScreen = ({ navigation }) => {
 
   const renderConversation = ({ item }) => {
     const isGroup = item.conversationType === CometChat.RECEIVER_TYPE.GROUP;
-    
-    // For groups, use guid; for users, use uid
-    const conversationId = isGroup 
-      ? item.conversationWith?.guid 
-      : item.conversationWith?.uid;
-
+    const conversationId = isGroup ? item.conversationWith?.guid : item.conversationWith?.uid;
     const name = item.conversationWith?.name;
     const groupIcon = isGroup ? item.conversationWith?.icon : null;
     
-    // Handle different message types and blocking
     let lastMessage = 'Start chatting';
     if (item.lastMessage) {
       const isBlocked = blockedUsers.has(item.lastMessage.sender?.uid);
@@ -509,13 +543,19 @@ const ChatMainScreen = ({ navigation }) => {
 
     return (
       <TouchableOpacity 
-        style={styles.conversationItem}
+        style={[
+          styles.conversationItem,
+          isWeb && styles.webConversationItem
+        ]}
         onPress={navigateToChat}
         onLongPress={handleLongPress}
+        onKeyPress={(e) => handleKeyPress(e, () => handleLongPress(item))}
         accessible={true}
         accessibilityLabel={`${accessibilityLabel}. Long press to delete conversation`}
         accessibilityHint="Double tap to open conversation, double tap and hold to delete"
         accessibilityRole="button"
+        role="button"
+        tabIndex={0}
       >
         <View style={styles.avatarContainer}>
           <Image 
@@ -523,10 +563,11 @@ const ChatMainScreen = ({ navigation }) => {
               (groupIcon ? { uri: groupIcon } : require('../../assets/megaphone.png')) : 
               { uri: users[conversationId]?.profilePicture || 'https://www.gravatar.com/avatar' }
             }
-            style={styles.avatar}
-            accessible={true}
-            accessibilityLabel={`${name}'s profile picture`}
-            accessibilityRole="image"
+            style={[
+              styles.avatar,
+              isWeb && styles.webAvatar
+            ]}
+            alt={`${name}'s profile picture`}
           />
         </View>
         <View 
@@ -535,21 +576,26 @@ const ChatMainScreen = ({ navigation }) => {
           accessibilityElementsHidden={true}
           importantForAccessibility="no-hide-descendants"
         >
-          <Text style={styles.userName}>{name || 'Unknown'}</Text>
           <Text style={[
-            styles.lastMessage, 
-            blockedUsers.has(item.lastMessage?.sender?.uid) && styles.hiddenMessage
+            styles.userName,
+            isWeb && styles.webUserName
+          ]}>
+            {name || 'Unknown'}
+          </Text>
+          <Text style={[
+            styles.lastMessage,
+            blockedUsers.has(item.lastMessage?.sender?.uid) && styles.hiddenMessage,
+            isWeb && styles.webLastMessage
           ]} numberOfLines={1}>
             {lastMessage}
           </Text>
         </View>
         
         {supporterAccess[conversationId] && (
-          <View 
-            style={styles.supporterBadge}
-            accessible={true}
-            accessibilityElementsHidden={true}
-          >
+          <View style={[
+            styles.supporterBadge,
+            isWeb && styles.webSupporterBadge
+          ]}>
             <Text style={styles.supporterBadgeText}>Supporter</Text>
           </View>
         )}
@@ -557,119 +603,98 @@ const ChatMainScreen = ({ navigation }) => {
     );
   };
 
+  const renderHelperSection = () => (
+    <View 
+      style={[
+        styles.helperSection,
+        isWeb && styles.webHelperSection
+      ]}
+      accessible={true}
+      accessibilityRole="complementary"
+      accessibilityLabel="Chat helper information"
+    >
+      <View style={styles.helperHeader}>
+        <MaterialCommunityIcons 
+          name="information" 
+          size={24} 
+          color="#24269B"
+          style={styles.infoIcon}
+        />
+      </View>
+      <View style={styles.helperContent}>
+        <Image 
+          source={require('../../assets/megaphone.png')}
+          style={styles.helperImage}
+          alt="Chat illustration"
+        />
+        <Text style={styles.helperTitle}>Welcome to Chat!</Text>
+        <View style={styles.helperTextContainer}>
+          <Text style={styles.helperText}>
+            • Start conversations with other users
+          </Text>
+          <Text style={styles.helperText}>
+            • Share experiences and support each other
+          </Text>
+          <Text style={styles.helperText}>
+            • Join community chats to connect with groups
+          </Text>
+          <Text style={styles.helperText}>
+            • Use the New Chat button to begin a conversation
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+
   if (loading) {
     return (
-      <View 
-        style={styles.centerContainer}
-        accessible={true}
-        accessibilityLabel="Loading conversations"
-      >
+      <View style={[
+        styles.centerContainer,
+        isWeb && styles.webCenterContainer
+      ]}>
         <ActivityIndicator size="large" color="#24269B" />
       </View>
     );
   }
 
   return (
-    <View 
-      style={styles.container}
-      accessible={true}
-      accessibilityLabel="Chat conversations"
-    >
-      <FlatList
-        ListHeaderComponent={() => (
-          <>
-            {showHelpers && (
-              <View 
-                style={styles.helperSection}
-                accessible={true}
-                accessibilityRole="header"
-                accessibilityLabel={`Chat Helper Information. Start Chatting! Here's what you can do: 
-                  Tap the dark blue New Chat button in the bottom right corner to start a conversation. 
-                  Chat with one person or create a group chat. 
-                  Your chats will appear in this list. 
-                  There are lots of built in safety features. If someone is bothering you, press and hold on their message and select Report. 
-                  To delete your own message, press and hold on it and select Delete. 
-                  To delete a conversation, press and hold on it and select Delete Conversation. 
-                  To leave a group, tap the group info button and select Leave Group. 
-                  Have fun chatting!`}
-              >
-                <View style={styles.helperHeader}>
-                  <MaterialCommunityIcons 
-                    name="information" 
-                    size={24} 
-                    color="#24269B"
-                    style={styles.infoIcon}
-                    importantForAccessibility="no"
-                  />
-                </View>
-                <View style={styles.helperContent}>
-                  <Image 
-                    source={require('../../assets/liam-messages.png')}
-                    style={styles.helperImage}
-                    importantForAccessibility="no"
-                  />
-                  <Text style={styles.helperTitle}>Start Chatting!</Text>
-                  <View style={styles.helperTextContainer}>
-                    <Text style={styles.helperText}>
-                      • Tap the dark blue "New Chat" button to start a conversation
-                    </Text>
-                    <Text style={styles.helperText}>
-                      • Chat with one person or create a group chat
-                    </Text>
-                    <Text style={styles.helperText}>
-                      • Your chats will appear in this list
-                    </Text>
-                    <Text style={styles.helperText}>
-                      • There are lots of built in safety features. If someone is bothering you, press and hold on their message and select "Report"
-                    </Text>
-                    <Text style={styles.helperText}>
-                      • To delete your own message, press and hold on it and select "Delete"
-                    </Text>
-                    <Text style={styles.helperText}>
-                      • To delete a conversation, press and hold on it and select "Delete Conversation"
-                    </Text>
-                    <Text style={styles.helperText}>
-                      • To leave a group, tap the group info button and select "Leave Group"
-                    </Text>
-                    <Text style={styles.helperText}>
-                      • Have fun chatting!
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            )}
-          </>
-        )}
-        data={conversations}
-        renderItem={renderConversation}
-        keyExtractor={item => item.conversationId}
-        accessibilityHint="Scroll to view conversations"
-        ListEmptyComponent={
-          <View 
-            style={styles.emptyContainer}
-            accessible={true}
-            accessibilityLabel="No conversations"
-          >
-            <Text style={styles.emptyText}>No conversations yet</Text>
-            <TouchableOpacity 
-              style={styles.startChatButton}
-              onPress={() => {
-                announceToScreenReader('Starting new chat');
-                navigation.navigate('NewChat');
-              }}
-              accessible={true}
-              accessibilityLabel="Start a new chat"
-              accessibilityHint="Opens screen to start a new conversation"
-              accessibilityRole="button"
-            >
-              <Text style={styles.startChatButtonText}>Start a new chat</Text>
-            </TouchableOpacity>
-          </View>
-        }
-      />
+    <View style={[
+      styles.container,
+      isWeb && styles.webContainer
+    ]}>
+      {isWeb && (
+        <div id="aria-live-region" 
+          role="status" 
+          aria-live="polite" 
+          style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}
+        />
+      )}
+      
+      {isWeb ? (
+        <ScrollView style={styles.webScrollView}>
+          {showHelpers && renderHelperSection()}
+          {conversations.map((item) => (
+            <React.Fragment key={item.conversationId}>
+              {renderConversation({ item })}
+            </React.Fragment>
+          ))}
+          {conversations.length === 0 && renderEmptyState()}
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={conversations}
+          renderItem={renderConversation}
+          keyExtractor={item => item.conversationId}
+          ListHeaderComponent={showHelpers ? renderHelperSection : null}
+          ListEmptyComponent={renderEmptyState}
+        />
+      )}
       
       <TouchableOpacity
-        style={styles.fab}
+        style={[
+          styles.fab,
+          isWeb && styles.webFab
+        ]}
         onPress={() => {
           announceToScreenReader('Starting new chat');
           navigation.navigate('NewChat');
@@ -678,6 +703,9 @@ const ChatMainScreen = ({ navigation }) => {
         accessibilityLabel="New Chat"
         accessibilityHint="Double tap to start a new conversation"
         accessibilityRole="button"
+        role="button"
+        tabIndex={0}
+        onKeyPress={(e) => handleKeyPress(e, () => navigation.navigate('NewChat'))}
       >
         <View style={styles.fabContent}>
           <MaterialCommunityIcons name="message-plus" size={24} color="#FFFFFF" />
@@ -933,6 +961,95 @@ const styles = StyleSheet.create({
   hiddenMessage: {
     fontStyle: 'italic',
     color: '#999',
+  },
+
+  webContainer: {
+    flex: 1,
+    width: '100%',
+    maxWidth: '100%',
+    marginHorizontal: 0,
+    height: '100vh',
+    backgroundColor: '#ffffff',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  webScrollView: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 1200,
+    marginHorizontal: 'auto',
+    padding: '20px 32px',
+  },
+  webCenterContainer: {
+    height: '100vh',
+  },
+  webConversationItem: {
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    marginBottom: 12,
+    padding: 16,
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
+    ':hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
+      backgroundColor: '#f8f9fa',
+    },
+  },
+  webAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  webUserName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  webLastMessage: {
+    fontSize: 14,
+    color: '#666',
+  },
+  webSupporterBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#24269B',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  webNewChatButton: {
+    cursor: 'pointer',
+    transition: 'transform 0.2s ease',
+    ':hover': {
+      transform: 'scale(1.05)',
+    },
+  },
+  webFab: {
+    position: 'fixed',
+    right: 32,
+    bottom: 32,
+    cursor: 'pointer',
+    transition: 'transform 0.2s ease, background-color 0.2s ease',
+    ':hover': {
+      transform: 'scale(1.05)',
+      backgroundColor: '#1a1b6e',
+    },
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    zIndex: 1000,
+  },
+  webHelperSection: {
+    backgroundColor: '#f8f9fa',
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+    padding: 24,
+    marginBottom: 20,
+    borderRadius: 12,
+    width: '100%',
+    maxWidth: 800,
+    marginLeft: 'auto',
+    marginRight: 'auto',
   },
 });
 

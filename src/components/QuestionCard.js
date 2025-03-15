@@ -536,8 +536,10 @@ const QuestionCard = ({ question, presetWords, onSave, existingAnswer, isDatingQ
                 useNativeControls
                 resizeMode="contain"
                 isLooping
+                shouldPlay={false}
                 accessibilityLabel="Your recorded video answer"
                 accessibilityHint="Use video controls to play, pause, or seek"
+                posterStyle={{ width: '100%', height: '100%' }}
               />
             </>
           ) : (
@@ -582,18 +584,21 @@ const QuestionCard = ({ question, presetWords, onSave, existingAnswer, isDatingQ
 
       {/* Show preview after upload */}
       {questionData.mediaUrl && questionData.mediaType === 'video' && (
-        <View style={styles.previewContainer}>
-          <Video
-            source={{ uri: questionData.mediaUrl }}
-            style={styles.videoPreview}
-            useNativeControls
-            resizeMode="contain"
-            shouldPlay={false}
-            accessible={true}
-            accessibilityRole="button"
-            accessibilityLabel="Your video answer. Double tap to play."
-            accessibilityHint="Use video controls to play, pause, or seek through the video"
-          />
+        <View>
+          <View style={styles.previewContainer}>
+            <Video
+              source={{ uri: questionData.mediaUrl }}
+              style={styles.videoPreview}
+              useNativeControls
+              resizeMode="contain"
+              shouldPlay={false}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Your video answer. Double tap to play."
+              accessibilityHint="Use video controls to play, pause, or seek through the video"
+              videoStyle={{ width: '100%', height: '100%' }}
+            />
+          </View>
           <View style={styles.videoButtonsContainer}>
             <TouchableOpacity
               style={[styles.uploadButton, styles.videoActionButton]}
@@ -737,15 +742,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   videoContainer: {
-    height: 250,
+    width: '100%',
+    maxWidth: 300,
+    height: 200,
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#000',
     marginTop: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
   },
   video: {
     width: '100%',
     height: '100%',
+    maxWidth: 300,
+    maxHeight: 200,
   },
   uploadButton: {
     backgroundColor: '#24269B',
@@ -820,29 +832,36 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   previewContainer: {
+    width: '100%',
+    maxWidth: 600,
+    height: 460,
     marginTop: 10,
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#000',
+    alignSelf: 'center',
   },
   videoPreview: {
+    flex: 1,
     width: '100%',
-    height: 200,
+    height: '100%',
   },
   videoButtonsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     marginTop: 10,
     gap: 10,
-    padding: 10,
+    paddingHorizontal: 15,
   },
   videoActionButton: {
     flex: 1,
     backgroundColor: '#24269B',
+    marginVertical: 0,
   },
   deleteButton: {
     flex: 1,
-    backgroundColor: '#dc3545', // Red color for delete button
+    backgroundColor: '#dc3545',
+    marginVertical: 0,
   },
   videoToggleButton: {
     backgroundColor: '#24269B',

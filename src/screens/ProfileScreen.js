@@ -31,8 +31,7 @@ import StateDropdown from '../components/StateDropdown';
 import { useAccessibility } from '../context/AccessibilityContext';
 import { Timestamp } from 'firebase/firestore';
 
-
-
+const isWeb = Platform.OS === 'web';
 
 const US_STATES = [
   'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California',
@@ -1647,219 +1646,154 @@ const [lookingFor, setLookingFor] = useState('');
 
   return (
     <ScrollView 
-      style={styles.container}
+      style={[
+        styles.container,
+        isWeb && styles.webContainer
+      ]}
       accessible={false}
     >
-      {showHelpers && (
+      <View style={[
+        styles.contentWrapper,
+        isWeb && styles.webContentWrapper
+      ]}>
+        {showHelpers && (
+          <View 
+            style={[
+              styles.helperSection,
+              isWeb && styles.webHelperSection
+            ]}
+            accessible={true}
+            accessibilityRole="text"
+            accessibilityLabel={`Profile Helper Information. 
+              This is your profile page where you can share information about yourself. 
+              You can add a profile picture, set your location, birthday, and answer fun questions about yourself. 
+              If you have a dating subscription, you can also set your dating preferences.`}
+          >
+            <View style={styles.helperHeader}>
+              <MaterialCommunityIcons 
+                name="information" 
+                size={24} 
+                color="#24269B"
+                style={styles.infoIcon}
+                importantForAccessibility="no"
+              />
+            </View>
+            <View style={[
+              styles.helperContent,
+              isWeb && styles.webHelperContent
+            ]}>
+              <Text style={[
+                styles.helperTitle,
+                isWeb && styles.webHelperTitle
+              ]}>Welcome to Your Profile!</Text>
+              <View style={styles.helperTextContainer}>
+                <Text style={[
+                  styles.helperText,
+                  isWeb && styles.webHelperText
+                ]}>• Add or change your profile picture</Text>
+                <Text style={[
+                  styles.helperText,
+                  isWeb && styles.webHelperText
+                ]}>• Set your location and birthday</Text>
+                <Text style={[
+                  styles.helperText,
+                  isWeb && styles.webHelperText
+                ]}>• Answer questions about yourself</Text>
+                <Text style={[
+                  styles.helperText,
+                  isWeb && styles.webHelperText
+                ]}>• Set dating preferences if subscribed</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         <View 
-          style={styles.helperSection}
+          style={[
+            styles.profileHeader,
+            isWeb && styles.webProfileHeader
+          ]}
           accessible={true}
           accessibilityRole="text"
-          accessibilityLabel={`Profile Helper Information. 
-            This is your profile page where you can share information about yourself. 
-            You can add a profile picture, set your location, birthday, and answer fun questions about yourself. 
-            If you have a dating subscription, you can also set your dating preferences.`}
+          accessibilityLabel={`Profile for ${userData?.username || 'User'}. ${
+            userData?.state ? `Located in ${userData.state}.` : ''
+          } ${
+            userData?.birthdate ? `Birthday: ${formatBirthday(userData.birthdate)}` : ''
+          }`}
         >
-          <View style={styles.helperHeader}>
-            <MaterialCommunityIcons 
-              name="information" 
-              size={24} 
-              color="#24269B"
-              style={styles.infoIcon}
-              importantForAccessibility="no"
+          <TouchableOpacity 
+            ref={profileImageRef}
+            onPress={handleProfilePictureUpdate}
+            disabled={isUploading}
+            style={[
+              styles.profileImageContainer,
+              isWeb && styles.webProfileImageContainer
+            ]}
+            accessible={true}
+            accessibilityLabel={`Profile picture for ${userData?.username || 'User'}. Double tap to change`}
+            accessibilityHint="Opens image picker to select new profile picture"
+            accessibilityRole="button"
+          >
+            <Image
+              source={{ 
+                uri: userData?.profilePicture || 'https://www.gravatar.com/avatar'
+              }}
+              style={[
+                styles.profileImage,
+                isWeb && styles.webProfileImage
+              ]}
             />
-          </View>
-          <View style={styles.helperContent}>
-            <Text style={styles.helperTitle}>Welcome to Your Profile!</Text>
-            <View style={styles.helperTextContainer}>
-              <Text style={styles.helperText}>• Add or change your profile picture</Text>
-              <Text style={styles.helperText}>• Set your location and birthday</Text>
-              <Text style={styles.helperText}>• Answer questions about yourself</Text>
-              <Text style={styles.helperText}>• Set dating preferences if subscribed</Text>
-            </View>
-          </View>
-        </View>
-      )}
-
-      <View 
-        style={styles.profileHeader}
-        accessible={true}
-        accessibilityRole="text"
-        accessibilityLabel={`Profile for ${userData?.username || 'User'}. ${
-          userData?.state ? `Located in ${userData.state}.` : ''
-        } ${
-          userData?.birthdate ? `Birthday: ${formatBirthday(userData.birthdate)}` : ''
-        }`}
-      >
-        <TouchableOpacity 
-          ref={profileImageRef}
-          onPress={handleProfilePictureUpdate}
-          disabled={isUploading}
-          style={styles.profileImageContainer}
-          accessible={true}
-          accessibilityLabel={`Profile picture for ${userData?.username || 'User'}. Double tap to change`}
-          accessibilityHint="Opens image picker to select new profile picture"
-          accessibilityRole="button"
-        >
-          <Image
-            source={{ 
-              uri: userData?.profilePicture || 'https://www.gravatar.com/avatar'
-            }}
-            style={styles.profileImage}
-          />
-          {isUploading ? (
-            <View style={styles.uploadingOverlay}>
-              <ActivityIndicator color="#fff" />
-            </View>
-          ) : (
-            <View style={styles.editOverlay}>
-              <Text style={styles.editText}>Edit</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-        
-        <View 
-          style={styles.userInfo}
-          accessible={true}
-          accessibilityLabel={`Profile information for ${userData?.username || 'User'}`}
-        >
-          <Text style={styles.username}>{userData?.username || 'User'}</Text>
+            {isUploading ? (
+              <View style={styles.uploadingOverlay}>
+                <ActivityIndicator color="#fff" />
+              </View>
+            ) : (
+              <View style={[
+                styles.editOverlay,
+                isWeb && styles.webEditOverlay
+              ]}>
+                <Text style={styles.editText}>Edit</Text>
+              </View>
+            )}
+          </TouchableOpacity>
           
-         
-          {/* State */}
-          {userData?.state && (
-            <Text style={styles.infoText}>📍 {userData.state}</Text>
-          )}
-          
-          {/* Birthday */}
-          {userData?.birthdate && (
-            <Text style={styles.infoText}>
-              🎂 {formatBirthday(userData.birthdate)}
-            </Text>
-          )}
-
-    
-        </View>
-      </View>
-
-     
-
-      {showHelpers && (
-        <View 
-          style={styles.helperSection}
-          accessible={true}
-          accessibilityRole="text"
-          accessibilityLabel="Helper Information: Your Stats. Your stats show your total number of wins, how many cheers you've received, and how many comments people have left on your wins. They will automatically update."
-        >
-          <View style={styles.helperHeader}>
-            <MaterialCommunityIcons 
-              name="information" 
-              size={24} 
-              color="#24269B"
-              style={styles.infoIcon}
-              importantForAccessibility="no"
-            />
-          </View>
-          <Text style={styles.helperTextBold} importantForAccessibility="no">
-            Your Stats
-          </Text>
-          <Text style={styles.helperText} importantForAccessibility="no">
-            Your stats show your total number of wins, how many cheers you've received, and how many comments people have left on your wins. They will automatically update.
-          </Text>
-        </View>
-      )}
-
-      <View 
-        style={styles.statsSection}
-        accessible={false}
-      >
-        <View style={styles.statsRow}>
           <View 
-            style={styles.statItem}
+            style={[
+              styles.userInfo,
+              isWeb && styles.webUserInfo
+            ]}
             accessible={true}
-            accessibilityRole="text"
-            accessibilityLabel={`${wins.length} Wins`}
+            accessibilityLabel={`Profile information for ${userData?.username || 'User'}`}
           >
-            <Image 
-              source={require('../../assets/wins-stats.png')} 
-              style={styles.statIcon}
-              importantForAccessibility="no"
-            />
-            <Text style={styles.statNumber}>{wins.length}</Text>
-            <Text style={styles.statLabel}>Wins</Text>
-          </View>
-
-          <View 
-            style={styles.statItem}
-            accessible={true}
-            accessibilityRole="text"
-            accessibilityLabel={`${calculateStats(wins).totalCheers} Cheers received`}
-          >
-            <Image 
-              source={require('../../assets/cheers.png')} 
-              style={styles.statIcon}
-              importantForAccessibility="no"
-            />
-            <Text style={styles.statNumber}>
-              {calculateStats(wins).totalCheers}
-            </Text>
-            <Text style={styles.statLabel}>Cheers</Text>
-          </View>
-
-          <View 
-            style={styles.statItem}
-            accessible={true}
-            accessibilityRole="text"
-            accessibilityLabel={`${calculateStats(wins).totalComments} Comments received`}
-          >
-            <Image 
-              source={require('../../assets/comments.png')} 
-              style={styles.statIcon}
-              importantForAccessibility="no"
-            />
-            <Text style={styles.statNumber}>
-              {calculateStats(wins).totalComments}
-            </Text>
-            <Text style={styles.statLabel}>Comments</Text>
+            <Text style={[
+              styles.username,
+              isWeb && styles.webUsername
+            ]}>{userData?.username || 'User'}</Text>
+            
+            {userData?.state && (
+              <Text style={[
+                styles.infoText,
+                isWeb && styles.webInfoText
+              ]}>📍 {userData.state}</Text>
+            )}
+            
+            {userData?.birthdate && (
+              <Text style={[
+                styles.infoText,
+                isWeb && styles.webInfoText
+              ]}>
+                🎂 {formatBirthday(userData.birthdate)}
+              </Text>
+            )}
           </View>
         </View>
-      </View>
 
-      {showHelpers && !profileUserId && (
-        <View 
-          style={styles.helperSection}
-          accessible={true}
-          accessibilityRole="text"
-          accessibilityLabel="Helper Information: Your State. Select your state to help other people find you better in the Find a Friend feature."
-        >
-          <View style={styles.helperHeader}>
-            <MaterialCommunityIcons 
-              name="information" 
-              size={24} 
-              color="#24269B"
-              style={styles.infoIcon}
-              importantForAccessibility="no"
-            />
-          </View>
-          <Text style={styles.helperTextBold} importantForAccessibility="no">
-            Your State
-          </Text>
-          <Text style={styles.helperText} importantForAccessibility="no">
-            Select your state to help other people find you better in the Find a Friend feature.
-          </Text>
-        </View>
-      )}
-
-  
-      {!profileUserId ? ( // Only show these sections for own profile
-        <>
-          <StateSelector />
-
+        {showHelpers && (
           <View 
             style={styles.helperSection}
             accessible={true}
             accessibilityRole="text"
-            accessibilityLabel="Helper Information: Your Birthday. Tap to select your birthday. This helps people find you better in the Find a Friend feature."
+            accessibilityLabel="Helper Information: Your Stats. Your stats show your total number of wins, how many cheers you've received, and how many comments people have left on your wins. They will automatically update."
           >
             <View style={styles.helperHeader}>
               <MaterialCommunityIcons 
@@ -1871,117 +1805,224 @@ const [lookingFor, setLookingFor] = useState('');
               />
             </View>
             <Text style={styles.helperTextBold} importantForAccessibility="no">
-              Your Birthday
+              Your Stats
             </Text>
             <Text style={styles.helperText} importantForAccessibility="no">
-              Tap to select your birthday. This helps people find you better in the Find a Friend feature.
+              Your stats show your total number of wins, how many cheers you've received, and how many comments people have left on your wins. They will automatically update.
             </Text>
           </View>
+        )}
 
-          {renderPersonalInfo()}
-        </>
-      ) : null}
-
-
-<View 
-  style={styles.helperSection}
-  accessible={true}
-  accessibilityRole="text"
-  accessibilityLabel="Helper Information: Your Profile Questions. Answer these questions to tell people about yourself. You can: Tap the pencil icon to write your own answer. Tap the list icon to pick from suggested words. Tap the video icon to record a video answer. If you subscribe to the Dating plan, you will see questions about dating here as well."
->
-  <View style={styles.helperHeader}>
-    <MaterialCommunityIcons 
-      name="information" 
-      size={24} 
-      color="#24269B"
-      style={styles.infoIcon}
-      importantForAccessibility="no"
-    />
-  </View>
-  <Text style={styles.helperTextBold} importantForAccessibility="no">
-    Your Profile Questions
-  </Text>
-  <Text style={styles.helperText} importantForAccessibility="no">
-    Answer these questions to tell people about yourself. You can:
-  </Text>
-  <View style={styles.helperList} importantForAccessibility="no">
-    <Text style={styles.helperListItem}>• Tap the pencil icon to write your own answer.</Text>
-    <Text style={styles.helperListItem}>• Tap the list icon to pick from suggested words.</Text>
-    <Text style={styles.helperListItem}>• Tap the video icon to record a video answer.</Text>
-    <Text style={styles.helperListItem}>If you subscribe to the Dating plan, you will see questions about dating here as well.</Text>
-  </View>
-</View>
-
-      <View style={styles.questionSection}>
-        <Text style={styles.sectionTitle}>My Profile</Text>
-        {visibleQuestions.map((question) => (
-          <View key={question.id} style={styles.questionContainer}>
-            <QuestionCard
-              question={question.question}
-              presetWords={question.presetWords}
-              onSave={handleAnswerSave}
-              existingAnswer={getLatestAnswer(question.question)}
-              readOnly={!!profileUserId} // Make read-only when viewing other profiles
-              isDatingQuestion={question.isDatingQuestion}
-            />
-          </View>
-        ))}
-      </View>
-
-      {userData?.subscriptionType === 'selfAdvocateDating' && (
         <View 
-          style={styles.datingSection}
+          style={styles.statsSection}
+          accessible={false}
+        >
+          <View style={styles.statsRow}>
+            <View 
+              style={styles.statItem}
+              accessible={true}
+              accessibilityRole="text"
+              accessibilityLabel={`${wins.length} Wins`}
+            >
+              <Image 
+                source={require('../../assets/wins-stats.png')} 
+                style={styles.statIcon}
+                importantForAccessibility="no"
+              />
+              <Text style={styles.statNumber}>{wins.length}</Text>
+              <Text style={styles.statLabel}>Wins</Text>
+            </View>
+
+            <View 
+              style={styles.statItem}
+              accessible={true}
+              accessibilityRole="text"
+              accessibilityLabel={`${calculateStats(wins).totalCheers} Cheers received`}
+            >
+              <Image 
+                source={require('../../assets/cheers.png')} 
+                style={styles.statIcon}
+                importantForAccessibility="no"
+              />
+              <Text style={styles.statNumber}>
+                {calculateStats(wins).totalCheers}
+              </Text>
+              <Text style={styles.statLabel}>Cheers</Text>
+            </View>
+
+            <View 
+              style={styles.statItem}
+              accessible={true}
+              accessibilityRole="text"
+              accessibilityLabel={`${calculateStats(wins).totalComments} Comments received`}
+            >
+              <Image 
+                source={require('../../assets/comments.png')} 
+                style={styles.statIcon}
+                importantForAccessibility="no"
+              />
+              <Text style={styles.statNumber}>
+                {calculateStats(wins).totalComments}
+              </Text>
+              <Text style={styles.statLabel}>Comments</Text>
+            </View>
+          </View>
+        </View>
+
+        {showHelpers && !profileUserId && (
+          <View 
+            style={styles.helperSection}
+            accessible={true}
+            accessibilityRole="text"
+            accessibilityLabel="Helper Information: Your State. Select your state to help other people find you better in the Find a Friend feature."
+          >
+            <View style={styles.helperHeader}>
+              <MaterialCommunityIcons 
+                name="information" 
+                size={24} 
+                color="#24269B"
+                style={styles.infoIcon}
+                importantForAccessibility="no"
+              />
+            </View>
+            <Text style={styles.helperTextBold} importantForAccessibility="no">
+              Your State
+            </Text>
+            <Text style={styles.helperText} importantForAccessibility="no">
+              Select your state to help other people find you better in the Find a Friend feature.
+            </Text>
+          </View>
+        )}
+
+        {!profileUserId ? ( // Only show these sections for own profile
+          <>
+            <StateSelector />
+
+            <View 
+              style={styles.helperSection}
+              accessible={true}
+              accessibilityRole="text"
+              accessibilityLabel="Helper Information: Your Birthday. Tap to select your birthday. This helps people find you better in the Find a Friend feature."
+            >
+              <View style={styles.helperHeader}>
+                <MaterialCommunityIcons 
+                  name="information" 
+                  size={24} 
+                  color="#24269B"
+                  style={styles.infoIcon}
+                  importantForAccessibility="no"
+                />
+              </View>
+              <Text style={styles.helperTextBold} importantForAccessibility="no">
+                Your Birthday
+              </Text>
+              <Text style={styles.helperText} importantForAccessibility="no">
+                Tap to select your birthday. This helps people find you better in the Find a Friend feature.
+              </Text>
+            </View>
+
+            {renderPersonalInfo()}
+          </>
+        ) : null}
+
+
+        <View 
+          style={styles.helperSection}
           accessible={true}
           accessibilityRole="text"
-          accessibilityLabel="Dating preferences section"
+          accessibilityLabel="Helper Information: Your Profile Questions. Answer these questions to tell people about yourself. You can: Tap the pencil icon to write your own answer. Tap the list icon to pick from suggested words. Tap the video icon to record a video answer. If you subscribe to the Dating plan, you will see questions about dating here as well."
         >
-          {renderDatingInfo()}
-        </View>
-      )}
-
-
-      <View 
-        style={styles.helperSection}
-        accessible={true}
-        accessibilityRole="text"
-        accessibilityLabel="Helper Information: Your Win History. View all of your previous wins here. You can delete a win by tapping the red trash icon in the top right corner of the win card."
-      >
-        <View style={styles.helperHeader}>
-          <MaterialCommunityIcons 
-            name="information" 
-            size={24} 
-            color="#24269B"
-            style={styles.infoIcon}
-            importantForAccessibility="no"
-          />
-        </View>
-        <Text style={styles.helperTextBold} importantForAccessibility="no">
-          Your Win History
-        </Text>
-        <Text style={styles.helperText} importantForAccessibility="no">
-          View all of your previous wins here. You can delete a win by tapping the red trash icon in the top right corner of the win card.
-        </Text>
-      </View>
-
-      <View style={styles.winsContainer}>
-        <Text style={styles.sectionTitle}>My Win History</Text>
-        {wins && wins.length > 0 ? (
-          wins.map((win) => (
-            <WinCard 
-              key={win.id} 
-              win={win}
-              onDeleteWin={handleDeleteWin}
-              onCheersPress={() => handleCheersPress(win)}
-              lazyLoad={true}
+          <View style={styles.helperHeader}>
+            <MaterialCommunityIcons 
+              name="information" 
+              size={24} 
+              color="#24269B"
+              style={styles.infoIcon}
+              importantForAccessibility="no"
             />
-          ))
-        ) : (
-          <Text style={styles.noWinsText}>No wins yet</Text>
-        )}
-      </View>
+          </View>
+          <Text style={styles.helperTextBold} importantForAccessibility="no">
+            Your Profile Questions
+          </Text>
+          <Text style={styles.helperText} importantForAccessibility="no">
+            Answer these questions to tell people about yourself. You can:
+          </Text>
+          <View style={styles.helperList} importantForAccessibility="no">
+            <Text style={styles.helperListItem}>• Tap the pencil icon to write your own answer.</Text>
+            <Text style={styles.helperListItem}>• Tap the list icon to pick from suggested words.</Text>
+            <Text style={styles.helperListItem}>• Tap the video icon to record a video answer.</Text>
+            <Text style={styles.helperListItem}>If you subscribe to the Dating plan, you will see questions about dating here as well.</Text>
+          </View>
+        </View>
 
-     
-   
+        <View style={styles.questionSection}>
+          <Text style={styles.sectionTitle}>My Profile</Text>
+          {visibleQuestions.map((question) => (
+            <View key={question.id} style={styles.questionContainer}>
+              <QuestionCard
+                question={question.question}
+                presetWords={question.presetWords}
+                onSave={handleAnswerSave}
+                existingAnswer={getLatestAnswer(question.question)}
+                readOnly={!!profileUserId} // Make read-only when viewing other profiles
+                isDatingQuestion={question.isDatingQuestion}
+              />
+            </View>
+          ))}
+        </View>
+
+        {userData?.subscriptionType === 'selfAdvocateDating' && (
+          <View 
+            style={styles.datingSection}
+            accessible={true}
+            accessibilityRole="text"
+            accessibilityLabel="Dating preferences section"
+          >
+            {renderDatingInfo()}
+          </View>
+        )}
+
+
+        <View 
+          style={styles.helperSection}
+          accessible={true}
+          accessibilityRole="text"
+          accessibilityLabel="Helper Information: Your Win History. View all of your previous wins here. You can delete a win by tapping the red trash icon in the top right corner of the win card."
+        >
+          <View style={styles.helperHeader}>
+            <MaterialCommunityIcons 
+              name="information" 
+              size={24} 
+              color="#24269B"
+              style={styles.infoIcon}
+              importantForAccessibility="no"
+            />
+          </View>
+          <Text style={styles.helperTextBold} importantForAccessibility="no">
+            Your Win History
+          </Text>
+          <Text style={styles.helperText} importantForAccessibility="no">
+            View all of your previous wins here. You can delete a win by tapping the red trash icon in the top right corner of the win card.
+          </Text>
+        </View>
+
+        <View style={styles.winsContainer}>
+          <Text style={styles.sectionTitle}>My Win History</Text>
+          {wins && wins.length > 0 ? (
+            wins.map((win) => (
+              <WinCard 
+                key={win.id} 
+                win={win}
+                onDeleteWin={handleDeleteWin}
+                onCheersPress={() => handleCheersPress(win)}
+                lazyLoad={true}
+              />
+            ))
+          ) : (
+            <Text style={styles.noWinsText}>No wins yet</Text>
+          )}
+        </View>
+      </View>
     </ScrollView>
   );
 };
@@ -2712,6 +2753,139 @@ statsRow: {
   flexDirection: 'row',
   justifyContent: 'space-around',
   alignItems: 'center',
+},
+
+// Web-specific styles
+webContainer: {
+  backgroundColor: '#f8f9fa',
+},
+webContentWrapper: {
+  maxWidth: 1200,
+  marginHorizontal: 'auto',
+  padding: '32px 24px',
+  width: '100%',
+},
+webHelperSection: {
+  backgroundColor: '#ffffff',
+  borderRadius: 12,
+  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+  padding: 24,
+  marginBottom: 24,
+},
+webHelperContent: {
+  maxWidth: 800,
+  marginHorizontal: 'auto',
+},
+webHelperTitle: {
+  fontSize: 28,
+  marginBottom: 16,
+  color: '#24269B',
+},
+webHelperText: {
+  fontSize: 16,
+  lineHeight: 1.6,
+  marginBottom: 8,
+},
+webProfileHeader: {
+  backgroundColor: '#ffffff',
+  borderRadius: 12,
+  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+  padding: 32,
+  marginBottom: 24,
+  flexDirection: isWeb ? 'row' : 'column',
+  alignItems: 'center',
+},
+webProfileImageContainer: {
+  width: 200,
+  height: 200,
+  borderRadius: 100,
+  marginRight: isWeb ? 32 : 0,
+  marginBottom: isWeb ? 0 : 20,
+  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+  cursor: 'pointer',
+  transition: 'transform 0.2s ease',
+  ':hover': {
+    transform: 'scale(1.02)',
+  },
+},
+webProfileImage: {
+  width: '100%',
+  height: '100%',
+  borderRadius: 100,
+},
+webEditOverlay: {
+  backgroundColor: 'rgba(36, 38, 155, 0.8)',
+},
+webUserInfo: {
+  flex: 1,
+  alignItems: isWeb ? 'flex-start' : 'center',
+},
+webUsername: {
+  fontSize: 32,
+  marginBottom: 12,
+  color: '#24269B',
+},
+webInfoText: {
+  fontSize: 18,
+  marginBottom: 8,
+  color: '#4a4a4a',
+},
+webStatsSection: {
+  backgroundColor: '#ffffff',
+  borderRadius: 12,
+  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+  padding: 24,
+  marginBottom: 24,
+},
+webStatItem: {
+  padding: 16,
+  borderRadius: 8,
+  backgroundColor: '#f8f9fa',
+  transition: 'transform 0.2s ease',
+  ':hover': {
+    transform: 'translateY(-2px)',
+    boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
+  },
+},
+webQuestionSection: {
+  backgroundColor: '#ffffff',
+  borderRadius: 12,
+  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+  padding: 24,
+  marginBottom: 24,
+},
+webModalOverlay: {
+  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+webModalContent: {
+  backgroundColor: '#ffffff',
+  borderRadius: 12,
+  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+  padding: 24,
+  maxWidth: 500,
+  width: '90%',
+},
+webButton: {
+  cursor: 'pointer',
+  transition: 'background-color 0.2s ease',
+  ':hover': {
+    backgroundColor: '#1a1b6e',
+  },
+},
+webInput: {
+  borderWidth: 1,
+  borderColor: '#e1e1e1',
+  borderRadius: 8,
+  padding: 12,
+  fontSize: 16,
+  backgroundColor: '#ffffff',
+  transition: 'border-color 0.2s ease',
+  ':focus': {
+    borderColor: '#24269B',
+    outline: 'none',
+  },
 },
 });
 

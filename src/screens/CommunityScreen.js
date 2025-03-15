@@ -9,12 +9,19 @@ import {
   ActivityIndicator,
   Alert,
   AccessibilityInfo,
+  Platform,
+  ScrollView
 } from 'react-native';
-import { CometChat } from '@cometchat-pro/react-native-chat';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+// Conditional import based on platform
+const CometChat = Platform.OS === 'web' 
+  ? require('@cometchat-pro/chat').CometChat
+  : require('@cometchat-pro/react-native-chat').CometChat;
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { auth, db } from '../config/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { useAccessibility } from '../context/AccessibilityContext';
+
+const isWeb = Platform.OS === 'web';
 
 const CommunityScreen = ({ navigation }) => {
   const [groups, setGroups] = useState([]);
@@ -164,9 +171,32 @@ const CommunityScreen = ({ navigation }) => {
     }
   };
 
+  // Add keyboard navigation handler
+  const handleKeyPress = (e, onPress) => {
+    if (isWeb && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      onPress();
+    }
+  };
+
+  // Update announceToScreenReader for web
+  const announceToScreenReader = (message) => {
+    if (isWeb) {
+      const ariaLive = document.getElementById('aria-live-region');
+      if (ariaLive) {
+        ariaLive.textContent = message;
+      }
+    } else if (isScreenReaderEnabled) {
+      AccessibilityInfo.announceForAccessibility(message);
+    }
+  };
+
   const renderGroup = ({ item }) => (
     <TouchableOpacity 
-      style={styles.groupItem}
+      style={[
+        styles.groupItem,
+        isWeb && styles.webGroupItem
+      ]}
       onPress={() => {
         if (item.hasJoined) {
           navigation.navigate('GroupChat', {
@@ -177,6 +207,16 @@ const CommunityScreen = ({ navigation }) => {
           joinGroup(item);
         }
       }}
+      onKeyPress={(e) => handleKeyPress(e, () => {
+        if (item.hasJoined) {
+          navigation.navigate('GroupChat', {
+            uid: item.guid,
+            name: item.name
+          });
+        } else {
+          joinGroup(item);
+        }
+      })}
       accessible={true}
       accessibilityRole="button"
       accessibilityLabel={`${item.name} community`}
@@ -184,6 +224,8 @@ const CommunityScreen = ({ navigation }) => {
         ? "Double tap to open community chat" 
         : "Double tap to join community"
       }
+      role="button"
+      tabIndex={0}
     >
       <Image 
         source={
@@ -191,43 +233,44 @@ const CommunityScreen = ({ navigation }) => {
             ? { uri: item.icon }
             : require('../../assets/group-default.png')
         }
-        style={styles.groupIcon}
-        accessible={true}
-        accessibilityRole="image"
-        accessibilityLabel={`${item.name} community icon`}
+        style={[
+          styles.groupIcon,
+          isWeb && styles.webGroupIcon
+        ]}
+        alt={`${item.name} community icon`}
       />
-      <View 
-        style={styles.groupInfo}
-        accessible={true}
-        accessibilityRole="text"
-        importantForAccessibility="no"
-      >
-        <Text 
-          style={styles.groupName}
-          accessibilityLabel={`Community name: ${item.name}`}
-        >
+      <View style={[
+        styles.groupInfo,
+        isWeb && styles.webGroupInfo
+      ]}>
+        <Text style={[
+          styles.groupName,
+          isWeb && styles.webGroupName
+        ]}>
           {item.name}
         </Text>
-        <Text 
-          style={styles.groupDescription} 
-          numberOfLines={2}
-          accessibilityLabel={`Description: ${item.description || 'No description available'}`}
-        >
+        <Text style={[
+          styles.groupDescription,
+          isWeb && styles.webGroupDescription
+        ]} numberOfLines={2}>
           {item.description || 'No description available'}
         </Text>
-        <Text 
-          style={styles.memberCount}
-          accessibilityLabel={`${item.membersCount} members`}
-        >
+        <Text style={[
+          styles.memberCount,
+          isWeb && styles.webMemberCount
+        ]}>
           {item.membersCount} members
         </Text>
       </View>
       <TouchableOpacity 
         style={[
           styles.joinButton,
-          item.hasJoined && styles.joinedButton
+          item.hasJoined && styles.joinedButton,
+          isWeb && styles.webJoinButton,
+          isWeb && item.hasJoined && styles.webJoinedButton
         ]}
         onPress={() => !item.hasJoined && joinGroup(item)}
+        onKeyPress={(e) => handleKeyPress(e, () => !item.hasJoined && joinGroup(item))}
         accessible={true}
         accessibilityRole="button"
         accessibilityLabel={item.hasJoined ? "Already joined" : "Join community"}
@@ -238,10 +281,13 @@ const CommunityScreen = ({ navigation }) => {
         accessibilityState={{
           disabled: item.hasJoined
         }}
+        role="button"
+        tabIndex={0}
       >
         <Text style={[
           styles.joinButtonText,
-          item.hasJoined && styles.joinedButtonText
+          item.hasJoined && styles.joinedButtonText,
+          isWeb && styles.webJoinButtonText
         ]}>
           {item.hasJoined ? 'Joined' : 'Join'}
         </Text>
@@ -250,108 +296,74 @@ const CommunityScreen = ({ navigation }) => {
   );
 
   return (
-    <View 
-      style={styles.container}
-      accessible={true}
-      accessibilityRole="list"
-      accessibilityLabel="Communities list"
-    >
-      <FlatList
-        ListHeaderComponent={() => (
-          showHelpers && (
-            <View 
-              style={styles.helperSection}
-              accessible={true}
-              accessibilityRole="text"
-              accessibilityLabel="Helper Information: Join Communities. Image shows three self-advocates hanging out and having fun. Browse and join public communities. Chat with people who share your interests. Create your own public community with the dark blue Create Community button. Communities are public groups, so everyone can see what you write or upload."
-            >
-              <View style={styles.helperHeader}>
-                <MaterialCommunityIcons 
-                  name="information" 
-                  size={24} 
-                  color="#24269B"
-                  style={styles.infoIcon}
-                  importantForAccessibility="no"
-                />
-              </View>
-              <View style={styles.helperContent}>
-                <Image 
-                  source={require('../../assets/community.png')}
-                  style={styles.helperImage}
-                  importantForAccessibility="no"
-                />
-                <Text style={styles.helperTitle} importantForAccessibility="no">Join Communities!</Text>
-                <View style={styles.helperTextContainer} importantForAccessibility="no">
-                  <Text style={styles.helperText} importantForAccessibility="no">
-                    • Browse and join public communities
-                  </Text>
-                  <Text style={styles.helperText} importantForAccessibility="no">
-                    • Chat with people who share your interests
-                  </Text>
-                  <Text style={styles.helperText} importantForAccessibility="no">
-                    • Create your own public community with the dark blue Create Community button
-                  </Text>
-                  <Text style={styles.helperText} importantForAccessibility="no">
-                    • Communities are public groups, so everyone can see what you write or upload
-                  </Text>
-                </View>
-              </View>
-            </View>
-          )
-        )}
-        data={groups}
-        renderItem={renderGroup}
-        keyExtractor={item => item.guid}
-        accessibilityRole="list"
-        accessibilityLabel="List of available communities"
-        ListEmptyComponent={
-          !loading && (
-            <View 
-              style={styles.emptyContainer}
-              accessible={true}
-              accessibilityRole="text"
-              accessibilityLabel="No communities available"
-            >
+    <View style={[
+      styles.container,
+      isWeb && styles.webContainer
+    ]}>
+      {isWeb && (
+        <div id="aria-live-region" 
+          role="status" 
+          aria-live="polite" 
+          style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}
+        />
+      )}
+
+      {isWeb ? (
+        <ScrollView style={styles.webScrollView}>
+          {showHelpers && renderHelperSection()}
+          {groups.map((item) => (
+            <React.Fragment key={item.guid}>
+              {renderGroup({ item })}
+            </React.Fragment>
+          ))}
+          {groups.length === 0 && !loading && (
+            <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No communities available</Text>
             </View>
-          )
-        }
-      />
+          )}
+        </ScrollView>
+      ) : (
+        <FlatList
+          ListHeaderComponent={() => showHelpers && renderHelperSection()}
+          data={groups}
+          renderItem={renderGroup}
+          keyExtractor={item => item.guid}
+          ListEmptyComponent={
+            !loading && (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No communities available</Text>
+              </View>
+            )
+          }
+        />
+      )}
       
       <TouchableOpacity
-        style={styles.fab}
+        style={[
+          styles.fab,
+          isWeb && styles.webFab
+        ]}
         onPress={() => navigation.navigate('CreateCommunity')}
+        onKeyPress={(e) => handleKeyPress(e, () => navigation.navigate('CreateCommunity'))}
         accessible={true}
         accessibilityRole="button"
         accessibilityLabel="Create new community"
         accessibilityHint="Opens the community creation form"
+        role="button"
+        tabIndex={0}
       >
-        <View 
-          style={styles.fabContent}
-          importantForAccessibility="no"
-        >
-          <MaterialCommunityIcons 
-            name="plus" 
-            size={24} 
-            color="#FFFFFF"
-            accessibilityElementsHidden={true}
-          />
+        <View style={styles.fabContent}>
+          <MaterialCommunityIcons name="plus" size={24} color="#FFFFFF" />
           <Text style={styles.fabText}>Create Community</Text>
         </View>
       </TouchableOpacity>
 
       {loading && (
-        <View 
-          style={styles.loadingContainer}
-          accessible={true}
-          accessibilityRole="progressbar"
-          accessibilityLabel="Loading communities"
-        >
-          <ActivityIndicator 
-            size="large" 
-            color="#24269B"
-            accessibilityLabel="Loading"
-          />
+        <View style={[
+          styles.loadingContainer,
+          isWeb && styles.webLoadingContainer
+        ]}>
+          <ActivityIndicator size="large" color="#24269B" />
         </View>
       )}
     </View>
@@ -517,6 +529,86 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 8,
     lineHeight: 22,
+  },
+  webContainer: {
+    maxWidth: 800,
+    marginHorizontal: 'auto',
+    height: '100vh',
+    paddingTop: 20,
+  },
+  webScrollView: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  webGroupItem: {
+    cursor: 'pointer',
+    transition: 'background-color 0.2s ease',
+    ':hover': {
+      backgroundColor: '#f5f5f5',
+    },
+    borderRadius: 8,
+    marginBottom: 8,
+    padding: 16,
+  },
+  webGroupIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+  },
+  webGroupInfo: {
+    flex: 1,
+    marginLeft: 20,
+  },
+  webGroupName: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  webGroupDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 6,
+  },
+  webMemberCount: {
+    fontSize: 12,
+    color: '#666',
+  },
+  webJoinButton: {
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      transform: 'scale(1.05)',
+      backgroundColor: '#1a1b6e',
+    },
+  },
+  webJoinedButton: {
+    ':hover': {
+      backgroundColor: '#E0E0FF',
+    },
+  },
+  webJoinButtonText: {
+    fontSize: 14,
+  },
+  webFab: {
+    cursor: 'pointer',
+    transition: 'transform 0.2s ease, background-color 0.2s ease',
+    ':hover': {
+      transform: 'scale(1.05)',
+      backgroundColor: '#1a1b6e',
+    },
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+  },
+  webLoadingContainer: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
   },
 });
 

@@ -1,13 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { CometChat } from '@cometchat-pro/react-native-chat';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Platform, ScrollView } from 'react-native';
+import { CometChat } from '@cometchat-pro/chat';
 import { COMETCHAT_CONSTANTS } from '../config/cometChatConfig';
+
+const isWeb = Platform.OS === 'web';
 
 const SupportedUserChatScreen = ({ route, navigation }) => {
   const { supportedUser } = route.params;
   const [conversations, setConversations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [originalUser, setOriginalUser] = useState(null);
+
+  const handleKeyPress = (e, action) => {
+    if (isWeb && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      action();
+    }
+  };
 
   useEffect(() => {
     console.log('Supported user data:', supportedUser);
@@ -108,7 +117,6 @@ const SupportedUserChatScreen = ({ route, navigation }) => {
       new Date(lastMessage.sentAt * 1000).toLocaleDateString() : 
       'No date';
 
-    // Get appropriate preview text based on message type
     const getMessagePreview = (message) => {
       if (!message) return 'No messages';
       
@@ -124,38 +132,63 @@ const SupportedUserChatScreen = ({ route, navigation }) => {
       }
     };
 
+    const navigateToDetails = () => {
+      navigation.navigate(
+        isGroupChat ? 'SupportedUserGroupChatDetails' : 'SupportedUserChatDetails',
+        {
+          conversation: item,
+          supportedUser: supportedUser
+        }
+      );
+    };
+
     return (
       <TouchableOpacity 
-        style={styles.conversationItem}
-        onPress={() => navigation.navigate(
-          isGroupChat ? 'SupportedUserGroupChatDetails' : 'SupportedUserChatDetails',
-          {
-            conversation: item,
-            supportedUser: supportedUser
-          }
-        )}
+        style={[
+          styles.conversationItem,
+          isWeb && styles.webConversationItem
+        ]}
+        onPress={navigateToDetails}
         accessible={true}
         accessibilityRole="button"
         accessibilityLabel={`${isGroupChat ? 'Group chat' : 'Chat'} with ${otherUser?.name || 'Unknown User'}. Last message: ${getMessagePreview(lastMessage)}. ${timestamp}`}
         accessibilityHint={`Double tap to view ${isGroupChat ? 'group chat' : 'chat'} details`}
+        role="button"
+        tabIndex={0}
+        onKeyPress={(e) => handleKeyPress(e, navigateToDetails)}
       >
         <View 
-          style={styles.conversationHeader}
+          style={[
+            styles.conversationHeader,
+            isWeb && styles.webConversationHeader
+          ]}
           accessible={true}
           accessibilityRole="text"
         >
-          <Text style={styles.userName}>
+          <Text style={[
+            styles.userName,
+            isWeb && styles.webUserName
+          ]}>
             {otherUser?.name || 'Unknown User'}
           </Text>
-          <Text style={styles.timestamp}>
+          <Text style={[
+            styles.timestamp,
+            isWeb && styles.webTimestamp
+          ]}>
             {timestamp}
           </Text>
         </View>
-        <Text style={styles.lastMessage}>
+        <Text style={[
+          styles.lastMessage,
+          isWeb && styles.webLastMessage
+        ]}>
           {getMessagePreview(lastMessage)}
         </Text>
         <Text 
-          style={styles.readOnlyBadge}
+          style={[
+            styles.readOnlyBadge,
+            isWeb && styles.webReadOnlyBadge
+          ]}
           accessibilityRole="text"
         >
           {isGroupChat ? 'Read Only Group' : 'Read Only'}
@@ -167,7 +200,10 @@ const SupportedUserChatScreen = ({ route, navigation }) => {
   if (isLoading) {
     return (
       <View 
-        style={styles.loadingContainer}
+        style={[
+          styles.loadingContainer,
+          isWeb && styles.webLoadingContainer
+        ]}
         accessible={true}
         accessibilityRole="progressbar"
         accessibilityLabel="Loading conversations"
@@ -179,27 +215,52 @@ const SupportedUserChatScreen = ({ route, navigation }) => {
 
   return (
     <View 
-      style={styles.container}
+      style={[
+        styles.container,
+        isWeb && styles.webContainer
+      ]}
       accessible={true}
       accessibilityRole="text"
     >
       {conversations.length > 0 ? (
-        <FlatList
-          data={conversations}
-          renderItem={renderConversation}
-          keyExtractor={(item) => item.conversationId}
-          contentContainerStyle={styles.listContainer}
-          accessibilityRole="list"
-          accessibilityLabel={`${supportedUser.username}'s conversations`}
-        />
+        isWeb ? (
+          <ScrollView 
+            style={styles.webListContainer}
+            role="list"
+            aria-label={`${supportedUser.username}'s conversations`}
+          >
+            {conversations.map((item) => (
+              <React.Fragment key={item.conversationId}>
+                {renderConversation({ item })}
+              </React.Fragment>
+            ))}
+          </ScrollView>
+        ) : (
+          <FlatList
+            data={conversations}
+            renderItem={renderConversation}
+            keyExtractor={(item) => item.conversationId}
+            contentContainerStyle={styles.listContainer}
+            accessibilityRole="list"
+            accessibilityLabel={`${supportedUser.username}'s conversations`}
+          />
+        )
       ) : (
         <View 
-          style={styles.emptyContainer}
+          style={[
+            styles.emptyContainer,
+            isWeb && styles.webEmptyContainer
+          ]}
           accessible={true}
           accessibilityRole="text"
           accessibilityLabel="No conversations found"
         >
-          <Text style={styles.emptyText}>No conversations found</Text>
+          <Text style={[
+            styles.emptyText,
+            isWeb && styles.webEmptyText
+          ]}>
+            No conversations found
+          </Text>
         </View>
       )}
     </View>
@@ -261,6 +322,70 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
+    color: '#666',
+  },
+
+  // Web-specific styles
+  webContainer: {
+    maxWidth: 1200,
+    marginHorizontal: 'auto',
+    height: '100vh',
+    backgroundColor: '#ffffff',
+    padding: 32,
+  },
+  webLoadingContainer: {
+    height: '100vh',
+  },
+  webListContainer: {
+    padding: 16,
+  },
+  webConversationItem: {
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    borderRadius: 12,
+    marginBottom: 16,
+    padding: 20,
+    backgroundColor: '#f8f9fa',
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
+    ':hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
+    },
+    ':focus': {
+      outline: '2px solid #24269B',
+      outlineOffset: '2px',
+    },
+  },
+  webConversationHeader: {
+    marginBottom: 12,
+  },
+  webUserName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#24269B',
+  },
+  webTimestamp: {
+    fontSize: 14,
+    color: '#666',
+  },
+  webLastMessage: {
+    fontSize: 16,
+    color: '#444',
+    marginBottom: 8,
+  },
+  webReadOnlyBadge: {
+    backgroundColor: '#f0f0f0',
+    color: '#666',
+    padding: '6px 12px',
+    borderRadius: 16,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  webEmptyContainer: {
+    height: '100vh',
+  },
+  webEmptyText: {
+    fontSize: 18,
     color: '#666',
   },
 });

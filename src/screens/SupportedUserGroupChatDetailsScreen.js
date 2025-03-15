@@ -6,16 +6,20 @@ import {
   StyleSheet,
   ActivityIndicator,
   Image,
+  Platform,
+  ScrollView
 } from 'react-native';
-import { CometChat } from '@cometchat-pro/react-native-chat';
+import { CometChat } from '@cometchat-pro/chat';
 import { COMETCHAT_CONSTANTS } from '../config/cometChatConfig';
+
+const isWeb = Platform.OS === 'web';
 
 const SupportedUserGroupChatDetailsScreen = ({ route, navigation }) => {
   const { conversation, supportedUser } = route.params;
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [originalUser, setOriginalUser] = useState(null);
-  const flatListRef = useRef();
+  const scrollViewRef = useRef();
 
   useEffect(() => {
     navigation.setOptions({
@@ -75,7 +79,7 @@ const SupportedUserGroupChatDetailsScreen = ({ route, navigation }) => {
         onTextMessageReceived: message => {
           if (message.conversationId === conversation.conversationId) {
             setMessages(prev => [...prev, message]);
-            flatListRef.current?.scrollToEnd({ animated: true });
+            scrollViewRef.current?.scrollToEnd({ animated: true });
           }
         }
       })
@@ -103,7 +107,8 @@ const SupportedUserGroupChatDetailsScreen = ({ route, navigation }) => {
       <View 
         style={[
           styles.messageContainer,
-          isSupported ? styles.supportedMessage : styles.otherMessage
+          isSupported ? styles.supportedMessage : styles.otherMessage,
+          isWeb && styles.webMessageContainer
         ]}
         accessible={true}
         accessibilityRole="text"
@@ -113,31 +118,45 @@ const SupportedUserGroupChatDetailsScreen = ({ route, navigation }) => {
           source={{ uri: item.sender.avatar || 'default_avatar_url' }}
           style={[
             styles.avatar,
-            isSupported ? styles.supportedAvatar : styles.otherAvatar
+            isSupported ? styles.supportedAvatar : styles.otherAvatar,
+            isWeb && styles.webAvatar
           ]}
           defaultSource={require('../../assets/default-avatar.png')}
+          alt={`${item.sender.name}'s avatar`}
         />
         <View style={[
           styles.messageBubble,
-          isSupported ? styles.supportedBubble : styles.otherBubble
+          isSupported ? styles.supportedBubble : styles.otherBubble,
+          isWeb && styles.webMessageBubble
         ]}>
-          <Text style={styles.senderName}>
+          <Text style={[
+            styles.senderName,
+            isWeb && styles.webSenderName
+          ]}>
             {item.sender.name}
           </Text>
           {item.type === 'image' && (
             <Image
               source={{ uri: item.data.url }}
-              style={styles.messageImage}
+              style={[
+                styles.messageImage,
+                isWeb && styles.webMessageImage
+              ]}
               resizeMode="contain"
+              alt={`Image sent by ${item.sender.name}`}
             />
           )}
           <Text style={[
             styles.messageText,
-            isSupported ? styles.supportedText : styles.otherText
+            isSupported ? styles.supportedText : styles.otherText,
+            isWeb && styles.webMessageText
           ]}>
             {item.text}
           </Text>
-          <Text style={styles.timestamp}>
+          <Text style={[
+            styles.timestamp,
+            isWeb && styles.webTimestamp
+          ]}>
             {timestamp}
           </Text>
         </View>
@@ -148,7 +167,10 @@ const SupportedUserGroupChatDetailsScreen = ({ route, navigation }) => {
   if (isLoading) {
     return (
       <View 
-        style={styles.loadingContainer}
+        style={[
+          styles.loadingContainer,
+          isWeb && styles.webLoadingContainer
+        ]}
         accessible={true}
         accessibilityRole="progressbar"
         accessibilityLabel="Loading group chat messages"
@@ -160,30 +182,55 @@ const SupportedUserGroupChatDetailsScreen = ({ route, navigation }) => {
 
   return (
     <View 
-      style={styles.container}
+      style={[
+        styles.container,
+        isWeb && styles.webContainer
+      ]}
       accessible={true}
       accessibilityRole="text"
     >
       <Text 
-        style={styles.readOnlyBanner}
+        style={[
+          styles.readOnlyBanner,
+          isWeb && styles.webReadOnlyBanner
+        ]}
         accessibilityRole="alert"
         accessibilityLabel="This is a read only group chat view"
       >
         Read Only Group Chat View
       </Text>
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={item => item.id.toString()}
-        inverted
-        contentContainerStyle={[
-          styles.messagesList,
-          { flexDirection: 'column-reverse' }
-        ]}
-        accessibilityRole="list"
-        accessibilityLabel="Group chat message history"
-      />
+      
+      {isWeb ? (
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.webMessagesList}
+          contentContainerStyle={[
+            styles.messagesList,
+            { flexDirection: 'column-reverse' }
+          ]}
+          onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+        >
+          {messages.map((item) => (
+            <React.Fragment key={item.id.toString()}>
+              {renderMessage({ item })}
+            </React.Fragment>
+          ))}
+        </ScrollView>
+      ) : (
+        <FlatList
+          ref={scrollViewRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={item => item.id.toString()}
+          inverted
+          contentContainerStyle={[
+            styles.messagesList,
+            { flexDirection: 'column-reverse' }
+          ]}
+          accessibilityRole="list"
+          accessibilityLabel="Group chat message history"
+        />
+      )}
     </View>
   );
 };
@@ -268,6 +315,72 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         marginVertical: 4,
       },
+
+  // Web-specific styles
+  webContainer: {
+    maxWidth: 1200,
+    marginHorizontal: 'auto',
+    height: '100vh',
+    backgroundColor: '#ffffff',
+  },
+  webLoadingContainer: {
+    height: '100vh',
+  },
+  webMessagesList: {
+    flex: 1,
+    padding: 24,
+  },
+  webMessageContainer: {
+    marginBottom: 16,
+    transition: 'transform 0.2s ease',
+    ':hover': {
+      transform: 'translateY(-2px)',
+    },
+  },
+  webMessageBubble: {
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+    padding: 16,
+    borderRadius: 12,
+    maxWidth: '70%',
+  },
+  webAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginHorizontal: 12,
+    border: '2px solid #ffffff',
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+  },
+  webSenderName: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+    color: '#666',
+  },
+  webMessageText: {
+    fontSize: 16,
+    lineHeight: 1.5,
+  },
+  webTimestamp: {
+    fontSize: 12,
+    marginTop: 4,
+    opacity: 0.7,
+  },
+  webMessageImage: {
+    maxWidth: 400,
+    maxHeight: 400,
+    borderRadius: 8,
+    marginVertical: 8,
+  },
+  webReadOnlyBanner: {
+    backgroundColor: '#FFE4E1',
+    color: '#FF6B6B',
+    padding: 12,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    borderBottom: '1px solid #FFD1D1',
+  },
 });
 
 export default SupportedUserGroupChatDetailsScreen; 
