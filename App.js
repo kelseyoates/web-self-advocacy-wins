@@ -1,8 +1,11 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { CometChat } from '@cometchat-pro/react-native-chat';
-import { COMETCHAT_CONSTANTS } from './src/config/cometChatConfig';
 import { Platform, View, Text, StyleSheet } from 'react-native';
+// Conditional import based on platform
+const CometChat = Platform.OS === 'web' 
+  ? require('@cometchat-pro/chat').CometChat
+  : require('@cometchat-pro/react-native-chat').CometChat;
+import { COMETCHAT_CONSTANTS } from './src/config/cometChatConfig';
 import LoginScreen from './src/screens/LoginScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
 import TabNavigator from './src/navigation/TabNavigator';
@@ -47,6 +50,7 @@ const isWeb = Platform.OS === 'web';
 const appSettings = new CometChat.AppSettingsBuilder()
   .subscribePresenceForAllUsers()
   .setRegion(COMETCHAT_CONSTANTS.REGION)
+  .enableAutoJoinForGroups(true)  // Add this for better group chat handling
   .build();
 
 // Initialize CometChat
@@ -57,8 +61,21 @@ const initCometChat = async () => {
     
     if (isWeb) {
       console.log("CometChat initialized for web platform");
-      // Additional web-specific initialization if needed
-      CometChat.setSource('web-saw', 'web', 'react-native');
+      // Set source for analytics and debugging
+      CometChat.setSource('web-saw', Platform.OS, 'react-native');
+      
+      // Enable WebSocket for real-time communication on web
+      await CometChat.enableWebSocket(true);
+      
+      // Register service worker if available (for web push notifications)
+      if ('serviceWorker' in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.register('/cometchat-sw.js');
+          console.log('Service worker registered:', registration);
+        } catch (error) {
+          console.error('Service worker registration failed:', error);
+        }
+      }
     }
   } catch (error) {
     console.log("CometChat initialization failed:", error);

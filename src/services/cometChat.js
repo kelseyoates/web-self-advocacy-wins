@@ -1,4 +1,8 @@
-import { CometChat } from '@cometchat-pro/react-native-chat';
+import { Platform } from 'react-native';
+// Conditional import based on platform
+const CometChat = Platform.OS === 'web' 
+  ? require('@cometchat-pro/chat').CometChat
+  : require('@cometchat-pro/react-native-chat').CometChat;
 import { COMETCHAT_CONSTANTS } from '../config/cometChatConfig';
 
 export const COMETCHAT_ROLES = {

@@ -16,7 +16,10 @@ import {
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../config/firebase';
-import { CometChat } from '@cometchat-pro/react-native-chat';
+// Conditional import based on platform
+const CometChat = Platform.OS === 'web' 
+  ? require('@cometchat-pro/chat').CometChat
+  : require('@cometchat-pro/react-native-chat').CometChat;
 import { COMETCHAT_CONSTANTS } from '../config/cometChatConfig';
 
 const windowHeight = Dimensions.get('window').height;
@@ -97,52 +100,57 @@ const LoginScreen = ({ navigation }) => {
       let cometChatSuccess = false;
       
       try {
-        await CometChat.login(uid, COMETCHAT_CONSTANTS.AUTH_KEY);
-        console.log('CometChat login successful');
+        if (isWeb) {
+          // For web, ensure WebSocket is enabled
+          await CometChat.enableWebSocket(true);
+        }
+        
+        const user = await CometChat.login(uid, COMETCHAT_CONSTANTS.AUTH_KEY);
+        console.log('CometChat login successful:', user);
         cometChatSuccess = true;
+
+        if (isWeb) {
+          // Register for web push notifications if available
+          if ('serviceWorker' in navigator) {
+            try {
+              const registration = await navigator.serviceWorker.register('/cometchat-sw.js');
+              console.log('Service worker registered:', registration);
+              
+              // Register the service worker with CometChat
+              await CometChat.registerTokenForPushNotification(registration);
+            } catch (error) {
+              console.error('Service worker registration failed:', error);
+            }
+          }
+        }
       } catch (cometChatError) {
         console.error('CometChat login error:', cometChatError);
-        // Don't block login on web if CometChat fails
-        if (!isWeb) {
+        
+        if (isWeb) {
+          // On web, show warning but allow continuing
+          setErrorMsg('Chat features might be limited. Please try refreshing the page.');
+        } else {
+          // On mobile, block login
           showAlert('Login Error', 'Failed to connect to chat service. Please try again.');
+          setIsLoading(false);
           return;
         }
       }
-      
-      if (!cometChatSuccess && isWeb) {
-        console.log('CometChat login failed on web, but continuing with app navigation');
-        setErrorMsg('Login successful, but chat features might be limited.');
-      }
-      
+
       // Navigate to main app screen
       navigation.navigate('Main');
       
     } catch (error) {
       console.error('Login error:', error);
+      let errorMessage = 'Failed to log in. Please try again.';
       
-      // Handle specific Firebase auth errors
-      let errorMessage = 'An error occurred during login. Please try again.';
-      
-      switch (error.code) {
-        case 'auth/invalid-email':
-          errorMessage = 'Please enter a valid email address.';
-          break;
-        case 'auth/user-not-found':
-        case 'auth/wrong-password':
-          errorMessage = 'Invalid email or password. Please try again.';
-          break;
-        case 'auth/too-many-requests':
-          errorMessage = 'Too many failed login attempts. Please try again later.';
-          break;
-        case 'auth/user-disabled':
-          errorMessage = 'This account has been disabled. Please contact support.';
-          break;
-        case 'auth/network-request-failed':
-          errorMessage = 'Network error. Please check your internet connection.';
-          break;
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        errorMessage = 'Invalid email or password.';
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many login attempts. Please try again later.';
       }
-
-      showAlert('Login Failed', errorMessage);
+      
+      showAlert('Login Error', errorMessage);
       announceToScreenReader(errorMessage);
     } finally {
       setIsLoading(false);

@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, TextInput, StyleSheet, Text, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, Image, Alert, AccessibilityInfo } from 'react-native';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
-import { CometChat } from '@cometchat-pro/react-native-chat';
+// Conditional import based on platform
+const CometChat = Platform.OS === 'web' 
+  ? require('@cometchat-pro/chat').CometChat
+  : require('@cometchat-pro/react-native-chat').CometChat;
 import { COMETCHAT_CONSTANTS } from '../config/cometChatConfig';
 import { Dimensions } from 'react-native';
 
@@ -88,8 +91,28 @@ const SignUpScreen = ({ navigation }) => {
       console.log('CometChat user created successfully');
       
       // Login to CometChat
-      await CometChat.login(uid, COMETCHAT_CONSTANTS.AUTH_KEY);
-      console.log('CometChat login successful');
+      if (isWeb) {
+        // For web, ensure WebSocket is enabled
+        await CometChat.enableWebSocket(true);
+      }
+      
+      const loggedInUser = await CometChat.login(uid, COMETCHAT_CONSTANTS.AUTH_KEY);
+      console.log('CometChat login successful:', loggedInUser);
+
+      if (isWeb) {
+        // Register for web push notifications if available
+        if ('serviceWorker' in navigator) {
+          try {
+            const registration = await navigator.serviceWorker.register('/cometchat-sw.js');
+            console.log('Service worker registered:', registration);
+            
+            // Register the service worker with CometChat
+            await CometChat.registerTokenForPushNotification(registration);
+          } catch (error) {
+            console.error('Service worker registration failed:', error);
+          }
+        }
+      }
       
       return true;
     } catch (error) {
@@ -99,15 +122,42 @@ const SignUpScreen = ({ navigation }) => {
       if (error.code === 'ERR_UID_ALREADY_EXISTS') {
         // If user already exists, try to login directly
         try {
-          await CometChat.login(uid, COMETCHAT_CONSTANTS.AUTH_KEY);
-          console.log('CometChat login successful after user already exists error');
+          if (isWeb) {
+            await CometChat.enableWebSocket(true);
+          }
+          
+          const loggedInUser = await CometChat.login(uid, COMETCHAT_CONSTANTS.AUTH_KEY);
+          console.log('CometChat login successful after user exists error:', loggedInUser);
+          
+          if (isWeb) {
+            // Register for web push notifications
+            if ('serviceWorker' in navigator) {
+              try {
+                const registration = await navigator.serviceWorker.register('/cometchat-sw.js');
+                await CometChat.registerTokenForPushNotification(registration);
+              } catch (error) {
+                console.error('Service worker registration failed:', error);
+              }
+            }
+          }
+          
           return true;
         } catch (loginError) {
           console.error('CometChat login error after user exists error:', loginError);
+          if (isWeb) {
+            // On web, show warning but allow continuing
+            console.warn('CometChat login failed, but continuing with signup');
+            return true;
+          }
           return false;
         }
       }
       
+      if (isWeb) {
+        // On web, show warning but allow continuing
+        console.warn('CometChat user creation failed, but continuing with signup');
+        return true;
+      }
       return false;
     }
   };

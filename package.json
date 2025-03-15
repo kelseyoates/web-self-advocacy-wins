@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@algolia/client-search": "^5.18.0",
+    "@cometchat-pro/chat": "^3.0.13",
     "@cometchat-pro/react-native-chat": "^3.0.13",
     "@cometchat/chat-sdk-javascript": "^4.0.10",
     "@expo/metro-runtime": "~4.0.1",

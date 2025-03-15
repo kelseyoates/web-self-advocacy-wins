@@ -15,11 +15,16 @@ import {
   ScrollView,
   AccessibilityInfo
 } from 'react-native';
-import { CometChat } from '@cometchat-pro/react-native-chat';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+// Conditional import based on platform
+const CometChat = Platform.OS === 'web' 
+  ? require('@cometchat-pro/chat').CometChat
+  : require('@cometchat-pro/react-native-chat').CometChat;
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import * as ImagePicker from 'expo-image-picker';
+
+const isWeb = Platform.OS === 'web';
 
 const containsProfanity = (text) => {
   const profanityList = [
@@ -72,6 +77,10 @@ const ChatConversationScreen = ({ route, navigation }) => {
   const [hasShownBlockAlert, setHasShownBlockAlert] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [isCheckingBlock, setIsCheckingBlock] = useState(true);
+
+  // Add web-specific state and refs
+  const fileInputRef = useRef(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
 
   // Fetch initial messages
   const fetchMessages = useCallback(async () => {
@@ -385,7 +394,77 @@ const ChatConversationScreen = ({ route, navigation }) => {
     }
   };
 
+  // Web-specific file handling
+  const handleFileDrop = async (e) => {
+    if (!isWeb) return;
+    
+    e.preventDefault();
+    setIsDraggingFile(false);
+    
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      await handleWebImageUpload(file);
+    } else {
+      Alert.alert('Invalid File', 'Please drop an image file.');
+    }
+  };
+
+  const handleWebImageUpload = async (file) => {
+    try {
+      setIsUploading(true);
+      
+      const mediaMessage = new CometChat.MediaMessage(
+        uid,
+        file,
+        CometChat.MESSAGE_TYPE.IMAGE,
+        CometChat.RECEIVER_TYPE.USER
+      );
+
+      mediaMessage.setMetadata({
+        "extensions": {
+          "moderation": {
+            "enabled": true,
+            "image": {
+              "enabled": true,
+              "action": "block",
+              "severity": "high"
+            }
+          }
+        }
+      });
+
+      const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
+      
+      if (sentMessage.metadata?.moderation?.blocked || 
+          sentMessage.metadata?.["@injected"]?.extensions?.moderation?.blocked) {
+        throw new Error("INAPPROPRIATE_CONTENT");
+      }
+
+      setMessages(prev => {
+        const newMessages = [...prev, sentMessage];
+        requestAnimationFrame(() => {
+          if (flatListRef.current) {
+            flatListRef.current.scrollToEnd({ animated: true });
+          }
+        });
+        return newMessages;
+      });
+      
+      announceToScreenReader('Image sent successfully');
+    } catch (error) {
+      handleMediaError(error);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // Update media picker for web
   const handleMediaPicker = async () => {
+    if (isWeb) {
+      fileInputRef.current?.click();
+      return;
+    }
+
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       
@@ -401,92 +480,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
       });
 
       if (!result.canceled) {
-        setIsUploading(true);
-        const asset = result.assets[0];
-        console.log("Selected media:", asset);
-
-        try {
-          const file = {
-            name: asset.fileName || `image_${Date.now()}.jpg`,
-            type: asset.mimeType || 'image/jpeg',
-            uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
-            size: asset.fileSize
-          };
-
-          const mediaMessage = new CometChat.MediaMessage(
-            uid,
-            file,
-            CometChat.MESSAGE_TYPE.IMAGE,
-            CometChat.RECEIVER_TYPE.USER
-          );
-
-          mediaMessage.setMetadata({
-            "extensions": {
-              "moderation": {
-                "enabled": true,
-                "image": {
-                  "enabled": true,
-                  "action": "block",
-                  "severity": "high"
-                }
-              }
-            }
-          });
-
-          console.log("Attempting to send media message:", {
-            file: file,
-            metadata: mediaMessage.metadata
-          });
-
-          const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
-          console.log("Media message response:", sentMessage);
-
-          // Check moderation response
-          if (sentMessage.metadata?.moderation?.blocked || 
-              sentMessage.metadata?.["@injected"]?.extensions?.moderation?.blocked) {
-            throw new Error("INAPPROPRIATE_CONTENT");
-          }
-
-          setMessages(prev => {
-            const newMessages = [...prev, sentMessage];
-            requestAnimationFrame(() => {
-              if (flatListRef.current) {
-                flatListRef.current.scrollToEnd({ animated: true });
-              }
-            });
-            return newMessages;
-          });
-          announceToScreenReader('Image sent successfully');
-        } catch (error) {
-          console.log("Media send error details:", error);
-          
-          // More specific error handling
-          if (error.message === "INAPPROPRIATE_CONTENT" ||
-              error.code === "ERR_CONTENT_MODERATED" ||
-              error.code === "MESSAGE_MODERATED" ||
-              error.message?.toLowerCase().includes('moderation') ||
-              error.message?.toLowerCase().includes('inappropriate')) {
-            Alert.alert(
-              'Inappropriate Content',
-              'This image appears to contain inappropriate or explicit content and cannot be sent. Please choose a different image that follows community guidelines.'
-            );
-          } else if (error.code === "ERR_FILE_SIZE_TOO_LARGE") {
-            Alert.alert(
-              'File Too Large',
-              'The image file is too large. Please choose a smaller image or compress this one.'
-            );
-          } else if (error.code === "ERR_INVALID_MEDIA_MESSAGE") {
-            Alert.alert(
-              'Invalid Image',
-              'The selected image could not be processed. Please try a different image.'
-            );
-          } else {
-            Alert.alert(
-              'Upload Error',
-              'There was a problem sending your image. Please try again.'
-            );
-          }
-        }
+        handleNativeImageUpload(result.assets[0]);
       }
     } catch (error) {
       console.log("Media picker error:", error);
@@ -495,8 +489,93 @@ const ChatConversationScreen = ({ route, navigation }) => {
         'Failed to process the image. Please try again.'
       );
       announceToScreenReader('Failed to send image');
+    }
+  };
+
+  // Split image upload handling for native
+  const handleNativeImageUpload = async (asset) => {
+    setIsUploading(true);
+    try {
+      const file = {
+        name: asset.fileName || `image_${Date.now()}.jpg`,
+        type: asset.mimeType || 'image/jpeg',
+        uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
+        size: asset.fileSize
+      };
+
+      const mediaMessage = new CometChat.MediaMessage(
+        uid,
+        file,
+        CometChat.MESSAGE_TYPE.IMAGE,
+        CometChat.RECEIVER_TYPE.USER
+      );
+
+      mediaMessage.setMetadata({
+        "extensions": {
+          "moderation": {
+            "enabled": true,
+            "image": {
+              "enabled": true,
+              "action": "block",
+              "severity": "high"
+            }
+          }
+        }
+      });
+
+      const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
+      
+      if (sentMessage.metadata?.moderation?.blocked || 
+          sentMessage.metadata?.["@injected"]?.extensions?.moderation?.blocked) {
+        throw new Error("INAPPROPRIATE_CONTENT");
+      }
+
+      setMessages(prev => {
+        const newMessages = [...prev, sentMessage];
+        requestAnimationFrame(() => {
+          if (flatListRef.current) {
+            flatListRef.current.scrollToEnd({ animated: true });
+          }
+        });
+        return newMessages;
+      });
+      
+      announceToScreenReader('Image sent successfully');
+    } catch (error) {
+      handleMediaError(error);
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  // Unified media error handling
+  const handleMediaError = (error) => {
+    console.log("Media send error details:", error);
+    
+    if (error.message === "INAPPROPRIATE_CONTENT" ||
+        error.code === "ERR_CONTENT_MODERATED" ||
+        error.code === "MESSAGE_MODERATED" ||
+        error.message?.toLowerCase().includes('moderation') ||
+        error.message?.toLowerCase().includes('inappropriate')) {
+      Alert.alert(
+        'Inappropriate Content',
+        'This image appears to contain inappropriate or explicit content and cannot be sent. Please choose a different image that follows community guidelines.'
+      );
+    } else if (error.code === "ERR_FILE_SIZE_TOO_LARGE") {
+      Alert.alert(
+        'File Too Large',
+        'The image file is too large. Please choose a smaller image or compress this one.'
+      );
+    } else if (error.code === "ERR_INVALID_MEDIA_MESSAGE") {
+      Alert.alert(
+        'Invalid Image',
+        'The selected image could not be processed. Please try a different image.'
+      );
+    } else {
+      Alert.alert(
+        'Upload Error',
+        'There was a problem sending your image. Please try again.'
+      );
     }
   };
 
@@ -840,7 +919,15 @@ const ChatConversationScreen = ({ route, navigation }) => {
   }, [uid]);
 
   const renderInputContainer = () => (
-    <View style={styles.inputContainer}>
+    <View 
+      style={styles.inputContainer}
+      onDragOver={isWeb ? (e) => {
+        e.preventDefault();
+        setIsDraggingFile(true);
+      } : undefined}
+      onDragLeave={isWeb ? () => setIsDraggingFile(false) : undefined}
+      onDrop={isWeb ? handleFileDrop : undefined}
+    >
       <TouchableOpacity 
         style={styles.attachButton} 
         onPress={handleMediaPicker}
@@ -853,8 +940,28 @@ const ChatConversationScreen = ({ route, navigation }) => {
         />
       </TouchableOpacity>
 
+      {isWeb && (
+        <input
+          type="file"
+          ref={fileInputRef}
+          style={{ display: 'none' }}
+          accept="image/*"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              handleWebImageUpload(file);
+            }
+            e.target.value = ''; // Reset input
+          }}
+        />
+      )}
+
       <TextInput
-        style={[styles.input, isBlocked && styles.disabledInput]}
+        style={[
+          styles.input, 
+          isBlocked && styles.disabledInput,
+          isDraggingFile && styles.dragOverInput
+        ]}
         value={inputText}
         onChangeText={setInputText}
         placeholder={isBlocked ? "User is blocked" : "Type a message..."}
@@ -1068,6 +1175,16 @@ const styles = StyleSheet.create({
     padding: 20,
     color: '#666',
     fontSize: 16,
+  },
+  dragOverInput: {
+    borderColor: '#24269B',
+    borderStyle: 'dashed',
+    backgroundColor: '#f0f0f0',
+  },
+  webImage: {
+    maxWidth: '100%',
+    height: 'auto',
+    objectFit: 'contain',
   },
 });
 
