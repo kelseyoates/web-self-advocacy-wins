@@ -285,30 +285,75 @@ const ChatConversationScreen = ({ route, navigation }) => {
     };
   }, []);
 
-  // Add screen reader detection
+  // Update AccessibilityInfo usage to handle web environments better
   useEffect(() => {
     const checkScreenReader = async () => {
-      const screenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
-      setIsScreenReaderEnabled(screenReaderEnabled);
+      try {
+        if (isWeb) {
+          // Web fallback for screen reader detection
+          // Since AccessibilityInfo may not work reliably on web,
+          // we'll use a simple approach or default to false
+          setIsScreenReaderEnabled(false);
+        } else {
+          const screenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
+          setIsScreenReaderEnabled(screenReaderEnabled);
+        }
+      } catch (error) {
+        console.log('Error checking screen reader:', error);
+        setIsScreenReaderEnabled(false);
+      }
     };
 
     checkScreenReader();
-    const subscription = AccessibilityInfo.addEventListener(
-      'screenReaderChanged',
-      setIsScreenReaderEnabled
-    );
+    
+    // Only add listeners for native platforms
+    if (!isWeb) {
+      const subscription = AccessibilityInfo.addEventListener(
+        'screenReaderChanged',
+        setIsScreenReaderEnabled
+      );
 
-    return () => {
-      subscription.remove();
-    };
-  }, []);
-
-  // Add screen reader announcement helper
-  const announceToScreenReader = (message) => {
-    if (isScreenReaderEnabled) {
-      AccessibilityInfo.announceForAccessibility(message);
+      return () => {
+        subscription.remove();
+      };
     }
-  };
+  }, [isWeb]);
+
+  // Add screen reader announcement helper with web support
+  const announceToScreenReader = useCallback((message) => {
+    if (!isScreenReaderEnabled) return;
+    
+    if (isWeb) {
+      // Web implementation for screen reader announcements
+      const ariaLiveRegion = document.getElementById('aria-live-region');
+      if (ariaLiveRegion) {
+        ariaLiveRegion.textContent = message;
+      } else {
+        // Create and add the aria-live region if it doesn't exist
+        const liveRegion = document.createElement('div');
+        liveRegion.id = 'aria-live-region';
+        liveRegion.setAttribute('role', 'status');
+        liveRegion.setAttribute('aria-live', 'polite');
+        liveRegion.style.position = 'absolute';
+        liveRegion.style.width = '1px';
+        liveRegion.style.height = '1px';
+        liveRegion.style.margin = '-1px';
+        liveRegion.style.padding = '0';
+        liveRegion.style.overflow = 'hidden';
+        liveRegion.style.clip = 'rect(0, 0, 0, 0)';
+        liveRegion.style.whiteSpace = 'nowrap';
+        liveRegion.style.border = '0';
+        liveRegion.textContent = message;
+        document.body.appendChild(liveRegion);
+      }
+    } else {
+      try {
+        AccessibilityInfo.announceForAccessibility(message);
+      } catch (error) {
+        console.log('Error announcing to screen reader:', error);
+      }
+    }
+  }, [isScreenReaderEnabled, isWeb]);
 
   const sendMessage = async () => {
     const currentBlockStatus = await getBlockStatus();
@@ -719,15 +764,19 @@ const ChatConversationScreen = ({ route, navigation }) => {
           console.log('Long press triggered');
           handleMessageLongPress(item);
         }}
-        onMouseEnter={isWeb ? () => setIsHovered(true) : undefined}
-        onMouseLeave={isWeb ? () => setIsHovered(false) : undefined}
+        onHoverIn={isWeb ? () => setIsHovered(true) : undefined}
+        onHoverOut={isWeb ? () => setIsHovered(false) : undefined}
         delayLongPress={500}
         accessible={true}
-        accessibilityLabel={`${isMyMessage ? 'Your' : item.sender?.name + "'s"} message: ${item.text}. Sent at ${timestamp}. Long press for options.`}
+        accessibilityLabel={`${isMyMessage ? 'Your' : item.sender?.name + "'s"} message: ${item.text}. Sent at ${timestamp}.`}
         accessibilityHint="Double tap and hold to open message options"
+        accessibilityRole="button"
         style={({ pressed }) => [
+          { width: '100%' },
           isWeb && pressed && styles.webMessagePressed
         ]}
+        role={isWeb ? "article" : undefined}
+        aria-label={isWeb ? `${isMyMessage ? 'Your' : item.sender?.name + "'s"} message: ${item.text}` : undefined}
       >
         <View style={messageContainerStyle}>
           {!isMyMessage && (
@@ -879,28 +928,43 @@ const ChatConversationScreen = ({ route, navigation }) => {
 
     return (
       <View 
-        style={styles.smartRepliesContainer}
+        style={[styles.smartRepliesContainer, isWeb && styles.webSmartRepliesContainer]}
         accessible={true}
         accessibilityLabel="Quick reply suggestions"
+        role={isWeb ? "region" : undefined}
+        aria-label={isWeb ? "Quick reply suggestions" : undefined}
       >
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.smartRepliesContent}
+          contentContainerStyle={[styles.smartRepliesContent, isWeb && { paddingBottom: 8 }]}
+          style={isWeb && { overflow: 'auto' }}
         >
-          {smartReplies.map((reply, index) => (
-            <TouchableOpacity
-              key={index}
-              style={styles.smartReplyButton}
-              onPress={() => handleSmartReplyPress(reply)}
-              accessible={true}
-              accessibilityLabel={`Quick reply: ${reply}`}
-              accessibilityHint="Double tap to send this reply"
-              accessibilityRole="button"
-            >
-              <Text style={styles.smartReplyText}>{reply}</Text>
-            </TouchableOpacity>
-          ))}
+          {smartReplies.map((reply, index) => {
+            const [isHovered, setIsHovered] = useState(false);
+            
+            return (
+              <Pressable
+                key={index}
+                style={({pressed, hovered}) => [
+                  styles.smartReplyButton,
+                  isWeb && styles.webSmartReplyButton,
+                  isWeb && (isHovered || hovered) && styles.webSmartReplyButtonHover,
+                  pressed && styles.webButtonPressed
+                ]}
+                onPress={() => handleSmartReplyPress(reply)}
+                onHoverIn={isWeb ? () => setIsHovered(true) : undefined}
+                onHoverOut={isWeb ? () => setIsHovered(false) : undefined}
+                accessible={true}
+                accessibilityLabel={`Quick reply: ${reply}`}
+                accessibilityHint="Double tap to send this reply"
+                accessibilityRole="button"
+                role={isWeb ? "button" : undefined}
+              >
+                <Text style={[styles.smartReplyText, isWeb && styles.webSmartReplyText]}>{reply}</Text>
+              </Pressable>
+            );
+          })}
         </ScrollView>
       </View>
     );
@@ -964,6 +1028,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
     };
   }, [uid]);
 
+  // Update the renderInputContainer function to use Pressable instead of TouchableOpacity
   const renderInputContainer = () => (
     <View 
       style={inputContainerStyle}
@@ -974,19 +1039,21 @@ const ChatConversationScreen = ({ route, navigation }) => {
       onDragLeave={isWeb ? () => setIsDraggingFile(false) : undefined}
       onDrop={isWeb ? handleFileDrop : undefined}
     >
-      <TouchableOpacity 
-        style={[
+      <Pressable 
+        style={({pressed, hovered}) => [
           styles.attachButton, 
           isWeb && styles.webAttachButton,
-          isWeb && isHoveredAttach && styles.webAttachButtonHover
+          isWeb && (isHoveredAttach || hovered) && styles.webAttachButtonHover,
+          pressed && styles.webButtonPressed
         ]} 
         onPress={handleMediaPicker}
-        onMouseEnter={isWeb ? () => setIsHoveredAttach(true) : undefined}
-        onMouseLeave={isWeb ? () => setIsHoveredAttach(false) : undefined}
+        onHoverIn={isWeb ? () => setIsHoveredAttach(true) : undefined}
+        onHoverOut={isWeb ? () => setIsHoveredAttach(false) : undefined}
         disabled={isBlocked || isUploading || isLoading}
-        accessibilityRole={isWeb ? "button" : undefined}
+        accessibilityRole="button"
         accessibilityLabel="Attach image"
         accessibilityHint="Attach an image to your message"
+        accessibilityState={{disabled: isBlocked || isUploading || isLoading}}
         aria-disabled={isWeb ? (isBlocked || isUploading || isLoading) : undefined}
       >
         <MaterialCommunityIcons 
@@ -994,7 +1061,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
           size={36} 
           color={(isBlocked || isUploading || isLoading) ? "#999" : "#24269B"} 
         />
-      </TouchableOpacity>
+      </Pressable>
 
       {isWeb && (
         <input
@@ -1036,19 +1103,21 @@ const ChatConversationScreen = ({ route, navigation }) => {
         } : undefined}
       />
 
-      <TouchableOpacity 
-        style={[
+      <Pressable 
+        style={({pressed, hovered}) => [
           styles.sendButton,
           isWeb && styles.webSendButton,
-          isWeb && isHoveredSend && !isBlocked && !isLoading && !isUploading && inputText.trim() && styles.webSendButtonHover
+          isWeb && (isHoveredSend || hovered) && !isBlocked && !isLoading && !isUploading && inputText.trim() && styles.webSendButtonHover,
+          pressed && !isBlocked && !isLoading && !isUploading && inputText.trim() && styles.webButtonPressed
         ]} 
         onPress={sendMessage}
-        onMouseEnter={isWeb ? () => setIsHoveredSend(true) : undefined}
-        onMouseLeave={isWeb ? () => setIsHoveredSend(false) : undefined}
+        onHoverIn={isWeb ? () => setIsHoveredSend(true) : undefined}
+        onHoverOut={isWeb ? () => setIsHoveredSend(false) : undefined}
         disabled={isBlocked || isLoading || isUploading || !inputText.trim()}
-        accessibilityRole={isWeb ? "button" : undefined}
+        accessibilityRole="button"
         accessibilityLabel="Send message"
         accessibilityHint="Send your message"
+        accessibilityState={{disabled: isBlocked || isLoading || isUploading || !inputText.trim()}}
         aria-disabled={isWeb ? (isBlocked || isLoading || isUploading || !inputText.trim()) : undefined}
       >
         <MaterialCommunityIcons 
@@ -1056,7 +1125,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
           size={36} 
           color={(isBlocked || isLoading || isUploading || !inputText.trim()) ? "#999" : "#24269B"} 
         />
-      </TouchableOpacity>
+      </Pressable>
     </View>
   );
 
@@ -1071,34 +1140,65 @@ const ChatConversationScreen = ({ route, navigation }) => {
   }
 
   return (
-    <KeyboardAvoidingView 
-      style={[containerStyle, { height: isWeb ? '100vh' : screenHeight }]} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 150 : 0}
-      accessible={true}
-      accessibilityLabel="Chat conversation"
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={{ flex: 1 }}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      enabled={!isWeb}
     >
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={item => item.id.toString()}
-        contentContainerStyle={messageListStyle}
-        accessibilityLabel={`${messages.length} messages`}
-        accessibilityHint="Scroll to read messages"
-        onContentSizeChange={() => {
-          if (flatListRef.current) {
-            flatListRef.current.scrollToEnd({ animated: false });
-          }
-        }}
-        ListEmptyComponent={() => (
-          <Text style={[styles.emptyText, isWeb && styles.webEmptyText]}>No messages yet</Text>
-        )}
-      />
-      
-      {renderSmartReplies()}
+      {isWeb && (
+        <div 
+          id="aria-live-region" 
+          role="status" 
+          aria-live="polite" 
+          style={{ 
+            position: 'absolute', 
+            width: 1, 
+            height: 1, 
+            padding: 0, 
+            margin: -1, 
+            overflow: 'hidden', 
+            clip: 'rect(0, 0, 0, 0)', 
+            whiteSpace: 'nowrap', 
+            border: 0 
+          }}
+        />
+      )}
+      <View style={containerStyle}>
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={item => item.id}
+          style={[messageListStyle, isWeb && { overflow: 'auto' }]}
+          contentContainerStyle={isWeb && { flexGrow: 1, paddingBottom: 16 }}
+          ListEmptyComponent={() => (
+            <View
+              style={[styles.emptyContainer, isWeb && styles.webEmptyContainer]}
+              accessible={true}
+              accessibilityLabel="No messages yet"
+              accessibilityHint="Start the conversation by sending a message"
+              role={isWeb ? "region" : undefined}
+              aria-label={isWeb ? "No messages yet" : undefined}
+            >
+              <Text style={[styles.emptyText, isWeb && styles.webEmptyText]}>
+                No messages yet. Start the conversation!
+              </Text>
+            </View>
+          )}
+          onContentSizeChange={() => {
+            flatListRef.current?.scrollToEnd({ animated: false });
+          }}
+          initialNumToRender={20}
+          maxToRenderPerBatch={20}
+          windowSize={21}
+          removeClippedSubviews={Platform.OS !== 'web'}
+        />
+        
+        {renderSmartReplies()}
 
-      {renderInputContainer()}
+        {renderInputContainer()}
+      </View>
     </KeyboardAvoidingView>
   );
 };
@@ -1264,14 +1364,16 @@ const styles = StyleSheet.create({
     objectFit: 'contain',
   },
   webContainer: {
-    backgroundColor: '#f9f9f9',
-    minHeight: '100vh',
+    backgroundColor: '#FFFFFF',
+    height: '100vh',
+    width: '100%',
     display: 'flex',
     flexDirection: 'column',
   },
   webMessageList: {
     flex: 1,
-    padding: 20,
+    overflow: 'auto',
+    paddingHorizontal: 16,
   },
   webInputContainer: {
     padding: 16,
@@ -1334,6 +1436,37 @@ const styles = StyleSheet.create({
   webMessageText: {
     fontSize: 16,
     lineHeight: 1.4,
+  },
+  webButtonPressed: {
+    opacity: 0.9,
+  },
+  webSmartRepliesContainer: {
+    backgroundColor: '#f5f5f5',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    paddingVertical: 8,
+  },
+  webSmartReplyButton: {
+    cursor: 'pointer',
+    borderRadius: 8,
+    padding: 12,
+    transition: 'background-color 0.2s ease',
+  },
+  webSmartReplyButtonHover: {
+    backgroundColor: 'rgba(36, 38, 155, 0.1)',
+  },
+  webSmartReplyText: {
+    color: '#000000',
+    fontSize: 14,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  webEmptyContainer: {
+    padding: 32,
+    marginTop: 64,
   },
 });
 

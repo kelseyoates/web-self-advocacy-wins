@@ -39,23 +39,39 @@ const AddSupporterScreen = ({ navigation }) => {
     searchInput: false
   });
 
-  // Check for screen reader
+  // Check for screen reader with web fallback
   useEffect(() => {
     const checkScreenReader = async () => {
-      const screenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
-      setIsScreenReaderEnabled(screenReaderEnabled);
+      try {
+        if (isWeb) {
+          // Web fallback for screen reader detection
+          // Since AccessibilityInfo may not work reliably on web,
+          // we'll use a simple approach or default to false
+          setIsScreenReaderEnabled(false);
+        } else {
+          const screenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
+          setIsScreenReaderEnabled(screenReaderEnabled);
+        }
+      } catch (error) {
+        console.log('Error checking screen reader:', error);
+        setIsScreenReaderEnabled(false);
+      }
     };
 
     checkScreenReader();
-    const subscription = AccessibilityInfo.addEventListener(
-      'screenReaderChanged',
-      setIsScreenReaderEnabled
-    );
+    
+    // Only add listeners for native platforms
+    if (!isWeb) {
+      const subscription = AccessibilityInfo.addEventListener(
+        'screenReaderChanged',
+        setIsScreenReaderEnabled
+      );
 
-    return () => {
-      subscription.remove();
-    };
-  }, []);
+      return () => {
+        subscription.remove();
+      };
+    }
+  }, [isWeb]);
 
   // Focus search input on web
   useEffect(() => {
@@ -95,12 +111,41 @@ const AddSupporterScreen = ({ navigation }) => {
     }
   }, [isWeb, searchQuery, navigation]);
 
-  // Helper function for screen reader announcements
+  // Helper function for screen reader announcements with web support
   const announceToScreenReader = useCallback((message) => {
-    if (isScreenReaderEnabled) {
-      AccessibilityInfo.announceForAccessibility(message);
+    if (!isScreenReaderEnabled) return;
+    
+    if (isWeb) {
+      // Web implementation for screen reader announcements
+      const ariaLiveRegion = document.getElementById('aria-live-region');
+      if (ariaLiveRegion) {
+        ariaLiveRegion.textContent = message;
+      } else {
+        // Create and add the aria-live region if it doesn't exist
+        const liveRegion = document.createElement('div');
+        liveRegion.id = 'aria-live-region';
+        liveRegion.setAttribute('role', 'status');
+        liveRegion.setAttribute('aria-live', 'polite');
+        liveRegion.style.position = 'absolute';
+        liveRegion.style.width = '1px';
+        liveRegion.style.height = '1px';
+        liveRegion.style.margin = '-1px';
+        liveRegion.style.padding = '0';
+        liveRegion.style.overflow = 'hidden';
+        liveRegion.style.clip = 'rect(0, 0, 0, 0)';
+        liveRegion.style.whiteSpace = 'nowrap';
+        liveRegion.style.border = '0';
+        liveRegion.textContent = message;
+        document.body.appendChild(liveRegion);
+      }
+    } else {
+      try {
+        AccessibilityInfo.announceForAccessibility(message);
+      } catch (error) {
+        console.log('Error announcing to screen reader:', error);
+      }
     }
-  }, [isScreenReaderEnabled]);
+  }, [isScreenReaderEnabled, isWeb]);
 
   // Handle search with debounce for web
   const handleSearch = useCallback(async () => {
@@ -373,8 +418,8 @@ const AddSupporterScreen = ({ navigation }) => {
     return (
       <Pressable 
         style={resultCardStyle}
-        onMouseEnter={isWeb ? () => setIsHovered(true) : undefined}
-        onMouseLeave={isWeb ? () => setIsHovered(false) : undefined}
+        onHoverIn={isWeb ? () => setIsHovered(true) : undefined}
+        onHoverOut={isWeb ? () => setIsHovered(false) : undefined}
         accessible={true}
         accessibilityRole="none"
       >
@@ -408,8 +453,11 @@ const AddSupporterScreen = ({ navigation }) => {
             </View>
           </View>
           
-          <TouchableOpacity
-            style={addButtonStyle}
+          <Pressable
+            style={({pressed}) => [
+              addButtonStyle,
+              pressed && item.isAvailable && !loading && styles.webButtonActive
+            ]}
             onPress={() => handleAddSupporter(item)}
             disabled={!item.isAvailable || loading}
             accessible={true}
@@ -418,12 +466,11 @@ const AddSupporterScreen = ({ navigation }) => {
             accessibilityState={{ disabled: !item.isAvailable || loading }}
             role={isWeb ? "button" : undefined}
             aria-disabled={isWeb ? (!item.isAvailable || loading) : undefined}
-            tabIndex={isWeb ? 0 : undefined}
           >
             <Text style={[styles.addButtonText, isWeb && styles.webAddButtonText]}>
               {loading ? 'Adding...' : item.isAvailable ? 'Add Supporter' : 'Not Available'}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </Pressable>
     );
@@ -435,9 +482,27 @@ const AddSupporterScreen = ({ navigation }) => {
       style={{ flex: 1 }}
       enabled={!isWeb}
     >
+      {isWeb && (
+        <div 
+          id="aria-live-region" 
+          role="status" 
+          aria-live="polite" 
+          style={{ 
+            position: 'absolute', 
+            width: 1, 
+            height: 1, 
+            padding: 0, 
+            margin: -1, 
+            overflow: 'hidden', 
+            clip: 'rect(0, 0, 0, 0)', 
+            whiteSpace: 'nowrap', 
+            border: 0 
+          }}
+        />
+      )}
       <ScrollView 
         ref={scrollViewRef}
-        style={containerStyle}
+        style={[containerStyle, isWeb && { overflow: 'auto' }]}
         contentContainerStyle={[
           contentWrapperStyle,
           { minHeight: isWeb ? '100vh' : 'auto' }
@@ -445,17 +510,20 @@ const AddSupporterScreen = ({ navigation }) => {
         keyboardShouldPersistTaps="handled"
       >
         {isWeb && !isMobile && (
-          <TouchableOpacity 
-            style={backButtonStyle}
+          <Pressable 
+            style={({pressed, hovered}) => [
+              backButtonStyle,
+              (hoverStates.backButton || pressed) && styles.webButtonHover
+            ]}
             onPress={handleBack}
-            onMouseEnter={() => setHoverStates(prev => ({...prev, backButton: true}))}
-            onMouseLeave={() => setHoverStates(prev => ({...prev, backButton: false}))}
+            onHoverIn={() => setHoverStates(prev => ({...prev, backButton: true}))}
+            onHoverOut={() => setHoverStates(prev => ({...prev, backButton: false}))}
             accessibilityRole="button"
             accessibilityLabel="Go back"
             tabIndex={0}
           >
             <Text style={styles.backButtonText}>← Back</Text>
-          </TouchableOpacity>
+          </Pressable>
         )}
 
         <Text 
@@ -489,11 +557,14 @@ const AddSupporterScreen = ({ navigation }) => {
               onFocus={() => setFocused(prev => ({...prev, searchInput: true}))}
               onBlur={() => setFocused(prev => ({...prev, searchInput: false}))}
             />
-            <TouchableOpacity 
-              style={searchButtonStyle}
+            <Pressable 
+              style={({pressed, hovered}) => [
+                searchButtonStyle,
+                (hoverStates.searchButton || pressed) && !loading && searchQuery.trim() && styles.webButtonHover
+              ]}
               onPress={handleSearch}
-              onMouseEnter={isWeb ? () => setHoverStates(prev => ({...prev, searchButton: true})) : undefined}
-              onMouseLeave={isWeb ? () => setHoverStates(prev => ({...prev, searchButton: false})) : undefined}
+              onHoverIn={isWeb ? () => setHoverStates(prev => ({...prev, searchButton: true})) : undefined}
+              onHoverOut={isWeb ? () => setHoverStates(prev => ({...prev, searchButton: false})) : undefined}
               disabled={loading || !searchQuery.trim()}
               accessible={true}
               accessibilityLabel={loading ? "Searching" : "Search"}
@@ -511,7 +582,7 @@ const AddSupporterScreen = ({ navigation }) => {
                   Search
                 </Text>
               )}
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
           {loading && searchResults.length === 0 && (
@@ -536,6 +607,7 @@ const AddSupporterScreen = ({ navigation }) => {
                 accessible={true}
                 accessibilityLabel={`${searchResults.length} search results`}
                 style={[styles.resultsList, isWeb && styles.webResultsList]}
+                contentContainerStyle={isWeb && { flexGrow: 1 }}
                 renderItem={renderResultItem}
                 scrollEnabled={false} // Disable scrolling as we're using a ScrollView
               />
@@ -762,7 +834,7 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   webSearchContainer: {
-    gap: 16,
+    marginBottom: 30,
   },
   webSearchInput: {
     height: 48,
@@ -809,7 +881,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   webResultsList: {
-    marginTop: 20,
+    flex: 1,
+    width: '100%',
   },
   webResultCard: {
     padding: 16,
@@ -897,6 +970,13 @@ const styles = StyleSheet.create({
   },
   webBackButtonHover: {
     backgroundColor: 'rgba(36, 38, 155, 0.1)',
+  },
+  webButtonHover: {
+    backgroundColor: '#3a3db1',
+    transform: [{ scale: 1.02 }],
+  },
+  webButtonActive: {
+    backgroundColor: '#1a1b70',
   },
 });
 

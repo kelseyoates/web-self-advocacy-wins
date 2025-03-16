@@ -128,6 +128,20 @@ const FindADateScreen = ({ navigation }) => {
   const textInputRef = useRef(null);
   const searchButtonRef = useRef(null);
 
+  // Announce to screen reader for web and native
+  const announceToScreenReader = useCallback((message) => {
+    if (isScreenReaderEnabled) {
+      if (isWeb) {
+        const ariaLive = document.getElementById('aria-live-region');
+        if (ariaLive) {
+          ariaLive.textContent = message;
+        }
+      } else {
+        AccessibilityInfo.announceForAccessibility(message);
+      }
+    }
+  }, [isScreenReaderEnabled]);
+
   // Add screen reader detection with web support
   useEffect(() => {
     const checkScreenReader = async () => {
@@ -158,20 +172,6 @@ const FindADateScreen = ({ navigation }) => {
       subscription.remove();
     };
   }, []);
-
-  // Update screen reader announcement for web and native
-  const announceToScreenReader = useCallback((message) => {
-    if (isScreenReaderEnabled) {
-      if (isWeb) {
-        const ariaLive = document.getElementById('aria-live-region');
-        if (ariaLive) {
-          ariaLive.textContent = message;
-        }
-      } else {
-        AccessibilityInfo.announceForAccessibility(message);
-      }
-    }
-  }, [isScreenReaderEnabled]);
 
   // Handle state selection
   const handleStateSelect = useCallback((state) => {
