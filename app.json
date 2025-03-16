@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "SelfAdvocacyWins",
-    "slug": "SelfAdvocacyWins",
+    "name": "Self-Advocacy Wins",
+    "slug": "self-advocacy-wins",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -9,10 +9,16 @@
     "newArchEnabled": true,
     "scheme": "selfadvocatelink",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.selfadvocacywins.app",
@@ -39,8 +45,17 @@
       "googleServicesFile": "./google-services.json"
     },
     "web": {
-      "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "favicon": "./assets/favicon.ico",
+      "bundler": "metro",
+      "output": "static",
+      "build": {
+        "babel": {
+          "include": ["@expo/vector-icons"]
+        }
+      },
+      "meta": {
+        "favicon": "./assets/favicon.ico"
+      }
     },
     "plugins": [
       [
