@@ -2,6 +2,7 @@ const createExpoWebpackConfigAsync = require('@expo/webpack-config');
 const path = require('path');
 const webpack = require('webpack');
 const dotenv = require('dotenv');
+const { DefinePlugin } = require('webpack');
 
 module.exports = async function (env, argv) {
   // Load environment variables from .env file
@@ -40,6 +41,52 @@ module.exports = async function (env, argv) {
         plugins: ['@babel/plugin-proposal-class-properties'],
       },
     },
+  });
+
+  // Replace %PUBLIC_URL% with empty string in HTML template
+  config.plugins.forEach(plugin => {
+    if (plugin.constructor.name === 'HtmlWebpackPlugin') {
+      plugin.userOptions.templateParameters = {
+        ...plugin.userOptions.templateParameters,
+        PUBLIC_URL: ''
+      };
+    }
+  });
+
+  // Add the DefinePlugin to replace process.env references
+  config.plugins.push(
+    new DefinePlugin({
+      'process.env.PUBLIC_URL': JSON.stringify('')
+    })
+  );
+
+  // Add a rule to copy public assets to output
+  config.plugins.push({
+    apply: (compiler) => {
+      compiler.hooks.afterEmit.tap('CopyPublicAssets', (compilation) => {
+        const fs = compiler.outputFileSystem;
+        // Copy favicon.ico and manifest.json to root of build directory
+        try {
+          const faviconSource = path.resolve(__dirname, 'assets/favicon.ico');
+          const faviconDest = path.resolve(compiler.outputPath, 'favicon.ico');
+          
+          const manifestSource = path.resolve(__dirname, 'web/manifest.json');
+          const manifestDest = path.resolve(compiler.outputPath, 'manifest.json');
+          
+          if (fs.copyFileSync) {
+            // Use webpack's fs if available
+            fs.copyFileSync(faviconSource, faviconDest);
+            fs.copyFileSync(manifestSource, manifestDest);
+          } else {
+            // Fallback to native fs
+            require('fs').copyFileSync(faviconSource, faviconDest);
+            require('fs').copyFileSync(manifestSource, manifestDest);
+          }
+        } catch (error) {
+          console.error('Error copying public assets:', error);
+        }
+      });
+    }
   });
 
   return config;
