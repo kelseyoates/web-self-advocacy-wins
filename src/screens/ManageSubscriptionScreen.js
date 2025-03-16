@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Linking, Alert, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Linking, Alert, ScrollView, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { auth, db } from '../config/firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -11,6 +11,7 @@ const ManageSubscriptionScreen = () => {
   const [currentSubscription, setCurrentSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
   const { showHelpers } = useAccessibility();
+  const isWeb = Platform.OS === 'web';
 
   useEffect(() => {
     fetchUserSubscription();
@@ -33,18 +34,23 @@ const ManageSubscriptionScreen = () => {
 
   const handleSubscriptionChange = async (newType) => {
     try {
-      // For all subscription changes, use the customer portal
       const portalLink = 'https://billing.stripe.com/p/login/9AQ5lZaOS8EH5LWfYY';
       
-      const supported = await Linking.canOpenURL(portalLink);
-      
-      if (supported) {
-        await Linking.openURL(portalLink);
+      if (isWeb) {
+        window.open(portalLink, '_blank');
         Alert.alert(
           'Subscription Management',
-          'After making changes to your subscription, please return to the app and restart it to see your updated features.',
-          [
-            {
+          'After making changes to your subscription, please return to this page and refresh to see your updated features.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        const supported = await Linking.canOpenURL(portalLink);
+        if (supported) {
+          await Linking.openURL(portalLink);
+          Alert.alert(
+            'Subscription Management',
+            'After making changes to your subscription, please return to the app and restart it to see your updated features.',
+            [{
               text: 'OK',
               onPress: () => {
                 navigation.reset({
@@ -52,11 +58,11 @@ const ManageSubscriptionScreen = () => {
                   routes: [{ name: 'Main' }],
                 });
               }
-            }
-          ]
-        );
-      } else {
-        Alert.alert('Error', 'Could not open subscription management page');
+            }]
+          );
+        } else {
+          Alert.alert('Error', 'Could not open subscription management page');
+        }
       }
     } catch (error) {
       console.error('Subscription change error:', error);
@@ -66,12 +72,9 @@ const ManageSubscriptionScreen = () => {
 
   if (loading) {
     return (
-      <ScrollView 
-        style={styles.container}
-        accessible={false}
-      >
-        <View style={styles.container} accessible={true} accessibilityRole="progressbar">
-          <Text style={styles.loadingText} accessibilityLabel="Loading your subscription information">
+      <ScrollView style={[styles.container, isWeb && styles.webContainer]}>
+        <View style={[styles.loadingContainer, isWeb && styles.webLoadingContainer]} accessible={true} accessibilityRole="progressbar">
+          <Text style={[styles.loadingText, isWeb && styles.webLoadingText]} accessibilityLabel="Loading your subscription information">
             Loading subscription info...
           </Text>
         </View>
@@ -80,242 +83,146 @@ const ManageSubscriptionScreen = () => {
   }
 
   return (
-    <ScrollView 
-      style={styles.container}
-      accessible={false}
-    >
-      {showHelpers && (
-        <View 
-          style={styles.helperSection}
-          accessible={true}
-          accessibilityRole="text"
-          accessibilityLabel="Helper Information: Manage Your Subscription. You can view your current plan and switch to a different plan if you'd like. To subscribe to a paid plan, you will need a credit or debit card. After making changes, you may need to restart the app to see your new features."
-        >
-          <View style={styles.helperHeader}>
-            <MaterialCommunityIcons 
-              name="information" 
-              size={24} 
-              color="#24269B"
-              style={styles.infoIcon}
-              importantForAccessibility="no"
-            />
+    <ScrollView style={[styles.container, isWeb && styles.webContainer]}>
+      <View style={[styles.content, isWeb && styles.webContent]}>
+        {showHelpers && (
+          <View style={[styles.helperSection, isWeb && styles.webHelperSection]}>
+            <View style={[styles.helperHeader, isWeb && styles.webHelperHeader]}>
+              <MaterialCommunityIcons 
+                name="information" 
+                size={24} 
+                color="#24269B"
+                style={styles.infoIcon}
+                importantForAccessibility="no"
+              />
+            </View>
+            <Text style={[styles.helperTitle, isWeb && styles.webHelperTitle]}>Manage Your Subscription</Text>
+            <View style={styles.helperTextContainer}>
+              {[
+                'View your current plan and its features',
+                'Switch to a different plan at any time',
+                'Credit or debit card required for paid plans',
+                'Restart app after changes to see new features'
+              ].map((text, index) => (
+                <Text key={index} style={[styles.helperText, isWeb && styles.webHelperText]}>
+                  • {text}
+                </Text>
+              ))}
+            </View>
           </View>
-          <Text style={styles.helperTitle}>Manage Your Subscription</Text>
-          <View style={styles.helperTextContainer}>
-            <Text style={styles.helperText}>
-              • View your current plan and its features
-            </Text>
-            <Text style={styles.helperText}>
-              • Switch to a different plan at any time
-            </Text>
-            <Text style={styles.helperText}>
-              • Credit or debit card required for paid plans
-            </Text>
-            <Text style={styles.helperText}>
-              • Restart app after changes to see new features
-            </Text>
-          </View>
-        </View>
-      )}
+        )}
 
-      <Text 
-        style={styles.title} 
-        accessible={true}
-        accessibilityRole="text"
-      >
-        Manage Your Subscription
-      </Text>
-      
-      <View 
-        style={styles.currentPlanCard} 
-        accessible={true} 
-        accessibilityRole="text"
-        accessibilityLabel={`Current plan: ${
-          currentSubscription === 'selfAdvocatePlus' ? 'Self Advocate Plus, ten dollars per month. Features include: Post wins, chat with others, and add supporters.' :
-          currentSubscription === 'selfAdvocateDating' ? 'Self Advocate Dating, twenty dollars per month. Features include: All Plus features and access to dating features.' :
-          currentSubscription === 'supporter1' ? 'Supporter 1, ten dollars per month. Features include: Support one self-advocate.' :
-          currentSubscription === 'supporter5' ? 'Supporter 5, fifty dollars per month. Features include: Support up to five self-advocates.' :
-          currentSubscription === 'supporter10' ? 'Supporter 10, one hundred dollars per month. Features include: Support up to ten self-advocates.' :
-          'Self Advocate, Free plan. Features include: Basic access to post wins and chat.'
-        }`}
-      >
-        <Text style={styles.currentPlanTitle}>Current Plan:</Text>
-        <Text style={styles.currentPlanName}>
-          {currentSubscription === 'selfAdvocatePlus' ? 'Self Advocate Plus - $10/month' :
-           currentSubscription === 'selfAdvocateDating' ? 'Self Advocate Dating - $20/month' :
-           currentSubscription === 'supporter1' ? 'Supporter 1 - $10/month' :
-           currentSubscription === 'supporter5' ? 'Supporter 5 - $50/month' :
-           currentSubscription === 'supporter10' ? 'Supporter 10 - $100/month' :
-           'Self Advocate - Free'}
+        <Text style={[styles.title, isWeb && styles.webTitle]}>
+          Manage Your Subscription
         </Text>
         
-        <Text style={styles.featuresTitle}>Your Current Features:</Text>
-        <View style={styles.featuresList}>
-          {currentSubscription === 'selfAdvocatePlus' && (
+        <View style={[styles.currentPlanCard, isWeb && styles.webCurrentPlanCard]}>
+          <Text style={[styles.currentPlanTitle, isWeb && styles.webCurrentPlanTitle]}>Current Plan:</Text>
+          <Text style={[styles.currentPlanName, isWeb && styles.webCurrentPlanName]}>
+            {currentSubscription === 'selfAdvocatePlus' ? 'Self Advocate Plus - $10/month' :
+             currentSubscription === 'selfAdvocateDating' ? 'Self Advocate Dating - $20/month' :
+             currentSubscription === 'supporter1' ? 'Supporter 1 - $10/month' :
+             currentSubscription === 'supporter5' ? 'Supporter 5 - $50/month' :
+             currentSubscription === 'supporter10' ? 'Supporter 10 - $100/month' :
+             'Self Advocate - Free'}
+          </Text>
+          
+          <Text style={[styles.featuresTitle, isWeb && styles.webFeaturesTitle]}>Your Current Features:</Text>
+          <View style={[styles.featuresList, isWeb && styles.webFeaturesList]}>
+            {currentSubscription === 'selfAdvocatePlus' && (
+              <>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Post wins and share your successes</Text>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Chat with other members</Text>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Add supporters to your network</Text>
+              </>
+            )}
+            {currentSubscription === 'selfAdvocateDating' && (
+              <>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• All Plus features</Text>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Access to dating features</Text>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Dating profile customization</Text>
+              </>
+            )}
+            {currentSubscription === 'supporter1' && (
+              <>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Support one self-advocate</Text>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Chat with your supported member</Text>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• View and cheer their wins</Text>
+              </>
+            )}
+            {currentSubscription === 'supporter5' && (
+              <>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Support up to five self-advocates</Text>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Chat with your supported members</Text>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• View and cheer their wins</Text>
+              </>
+            )}
+            {currentSubscription === 'supporter10' && (
+              <>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Support up to ten self-advocates</Text>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Chat with your supported members</Text>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• View and cheer their wins</Text>
+              </>
+            )}
+            {(!currentSubscription || currentSubscription === 'selfAdvocateFree') && (
+              <>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Post wins and share your successes</Text>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• Basic chat features</Text>
+                <Text style={[styles.featureItem, isWeb && styles.webFeatureItem]}>• View other members' wins</Text>
+              </>
+            )}
+          </View>
+        </View>
+
+        <Text style={[styles.sectionTitle, isWeb && styles.webSectionTitle]}>
+          Change Your Plan
+        </Text>
+
+        <View style={[styles.plansContainer, isWeb && styles.webPlansContainer]}>
+          {!currentSubscription.startsWith('supporter') && (
             <>
-              <Text style={styles.featureItem}>• Post wins and share your successes</Text>
-              <Text style={styles.featureItem}>• Chat with other members</Text>
-              <Text style={styles.featureItem}>• Add supporters to your network</Text>
-            </>
-          )}
-          {currentSubscription === 'selfAdvocateDating' && (
-            <>
-              <Text style={styles.featureItem}>• All Plus features</Text>
-              <Text style={styles.featureItem}>• Access to dating features</Text>
-              <Text style={styles.featureItem}>• Dating profile customization</Text>
-            </>
-          )}
-          {currentSubscription === 'supporter1' && (
-            <>
-              <Text style={styles.featureItem}>• Support one self-advocate</Text>
-              <Text style={styles.featureItem}>• Chat with your supported member</Text>
-              <Text style={styles.featureItem}>• View and cheer their wins</Text>
-            </>
-          )}
-          {currentSubscription === 'supporter5' && (
-            <>
-              <Text style={styles.featureItem}>• Support up to five self-advocates</Text>
-              <Text style={styles.featureItem}>• Chat with your supported members</Text>
-              <Text style={styles.featureItem}>• View and cheer their wins</Text>
-            </>
-          )}
-          {currentSubscription === 'supporter10' && (
-            <>
-              <Text style={styles.featureItem}>• Support up to ten self-advocates</Text>
-              <Text style={styles.featureItem}>• Chat with your supported members</Text>
-              <Text style={styles.featureItem}>• View and cheer their wins</Text>
-            </>
-          )}
-          {(!currentSubscription || currentSubscription === 'selfAdvocateFree') && (
-            <>
-              <Text style={styles.featureItem}>• Post wins and share your successes</Text>
-              <Text style={styles.featureItem}>• Basic chat features</Text>
-              <Text style={styles.featureItem}>• View other members' wins</Text>
+              {currentSubscription !== 'selfAdvocateFree' && (
+                <TouchableOpacity 
+                  style={[styles.planButton, isWeb && styles.webPlanButton]}
+                  onPress={() => handleSubscriptionChange('selfAdvocateFree')}
+                >
+                  <Text style={[styles.planTitle, isWeb && styles.webPlanTitle]}>Downgrade to Self Advocate</Text>
+                  <Text style={[styles.planPrice, isWeb && styles.webPlanPrice]}>Free</Text>
+                  <Text style={[styles.planDescription, isWeb && styles.webPlanDescription]}>
+                    Basic access to chat and post wins.
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {currentSubscription !== 'selfAdvocatePlus' && (
+                <TouchableOpacity 
+                  style={[styles.planButton, isWeb && styles.webPlanButton]}
+                  onPress={() => handleSubscriptionChange('selfAdvocatePlus')}
+                >
+                  <Text style={[styles.planTitle, isWeb && styles.webPlanTitle]}>Switch to Self Advocate Plus</Text>
+                  <Text style={[styles.planPrice, isWeb && styles.webPlanPrice]}>$10/month</Text>
+                  <Text style={[styles.planDescription, isWeb && styles.webPlanDescription]}>
+                    Add supporters, chat, and post wins.
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {currentSubscription !== 'selfAdvocateDating' && (
+                <TouchableOpacity 
+                  style={[styles.planButton, isWeb && styles.webPlanButton]}
+                  onPress={() => handleSubscriptionChange('selfAdvocateDating')}
+                >
+                  <Text style={[styles.planTitle, isWeb && styles.webPlanTitle]}>Switch to Self Advocate Dating</Text>
+                  <Text style={[styles.planPrice, isWeb && styles.webPlanPrice]}>$20/month</Text>
+                  <Text style={[styles.planDescription, isWeb && styles.webPlanDescription]}>
+                    All Plus features and dating access.
+                  </Text>
+                </TouchableOpacity>
+              )}
             </>
           )}
         </View>
       </View>
-
-      <Text 
-        style={styles.sectionTitle} 
-        accessible={true}
-        accessibilityRole="text"
-      >
-        Change Your Plan
-      </Text>
-
-      {/* Self Advocate Plans */}
-      {!currentSubscription.startsWith('supporter') && (
-        <>
-          {currentSubscription !== 'selfAdvocateFree' && (
-            <TouchableOpacity 
-              style={styles.planButton}
-              onPress={() => handleSubscriptionChange('selfAdvocateFree')}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Downgrade to Self Advocate Free plan. Basic access to chat and post wins. No monthly cost."
-              accessibilityHint="Double tap to change to the free plan"
-            >
-              <Text style={styles.planTitle}>Downgrade to Self Advocate - Free</Text>
-              <Text style={styles.planPrice}>Free</Text>
-              <Text style={styles.planDescription}>Basic access to chat and post wins.</Text>
-            </TouchableOpacity>
-          )}
-
-          {currentSubscription !== 'selfAdvocatePlus' && (
-            <TouchableOpacity 
-              style={styles.planButton}
-              onPress={() => handleSubscriptionChange('selfAdvocatePlus')}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Switch to Self Advocate Plus plan. Add supporters, chat, and post wins. Monthly cost is ten dollars."
-              accessibilityHint="Double tap to change to the plus plan"
-            >
-              <Text style={styles.planTitle}>Switch to Self Advocate Plus</Text>
-              <Text style={styles.planPrice}>$10/month</Text>
-              <Text style={styles.planDescription}>Add supporters, chat, and post wins.</Text>
-            </TouchableOpacity>
-          )}
-
-          {currentSubscription !== 'selfAdvocateDating' && (
-            <TouchableOpacity 
-              style={styles.planButton}
-              onPress={() => handleSubscriptionChange('selfAdvocateDating')}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Switch to Self Advocate Dating plan. All Plus features and dating access. Monthly cost is fifteen dollars."
-              accessibilityHint="Double tap to change to the dating plan"
-            >
-              <Text style={styles.planTitle}>Switch to Self Advocate Dating</Text>
-              <Text style={styles.planPrice}>$20/month</Text>
-              <Text style={styles.planDescription}>All Plus features and dating access</Text>
-            </TouchableOpacity>
-          )}
-        </>
-      )}
-
-      {/* Supporter Plans */}
-      {!currentSubscription.includes('selfAdvocate') && (
-        <>
-          {currentSubscription !== 'supporter1' && (
-            <TouchableOpacity 
-              style={styles.planButton}
-              onPress={() => handleSubscriptionChange('supporter1')}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Switch to Supporter 1 plan. Support one self-advocate. Monthly cost is ten dollars."
-              accessibilityHint="Double tap to change to the supporter 1 plan"
-            >
-              <Text style={styles.planTitle}>Switch to Supporter - 1</Text>
-              <Text style={styles.planPrice}>$10/month</Text>
-              <Text style={styles.planDescription}>Support one self-advocate</Text>
-            </TouchableOpacity>
-          )}
-
-          {currentSubscription !== 'supporter5' && (
-            <TouchableOpacity 
-              style={styles.planButton}
-              onPress={() => handleSubscriptionChange('supporter5')}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Switch to Supporter 5 plan. Support up to five self-advocates. Monthly cost is fifteen dollars."
-              accessibilityHint="Double tap to change to the supporter 5 plan"
-            >
-              <Text style={styles.planTitle}>Switch to Supporter - 5</Text>
-              <Text style={styles.planPrice}>$50/month</Text>
-              <Text style={styles.planDescription}>Support up to five self-advocates</Text>
-            </TouchableOpacity>
-          )}
-
-          {currentSubscription !== 'supporter10' && (
-            <TouchableOpacity 
-              style={styles.planButton}
-              onPress={() => handleSubscriptionChange('supporter10')}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Switch to Supporter 10 plan. Support up to ten self-advocates. Monthly cost is twenty dollars."
-              accessibilityHint="Double tap to change to the supporter 10 plan"
-            >
-              <Text style={styles.planTitle}>Switch to Supporter - 10</Text>
-              <Text style={styles.planPrice}>$100/month</Text>
-              <Text style={styles.planDescription}>Support up to ten self-advocates</Text>
-            </TouchableOpacity>
-          )}
-        </>
-      )}
-
-      {currentSubscription !== 'selfAdvocateFree' && (
-        <TouchableOpacity 
-          style={styles.cancelButton}
-          onPress={() => handleSubscriptionChange('cancel')}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Cancel subscription"
-          accessibilityHint="Double tap to begin subscription cancellation process"
-        >
-          <Text style={styles.cancelButtonText}>Cancel Subscription</Text>
-        </TouchableOpacity>
-      )}
     </ScrollView>
   );
 };
@@ -456,6 +363,123 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 8,
     lineHeight: 20,
+  },
+  // Web-specific styles
+  webContainer: {
+    backgroundColor: '#f5f5f5',
+    minHeight: '100vh',
+  },
+  webContent: {
+    maxWidth: 800,
+    marginHorizontal: 'auto',
+    padding: 40,
+  },
+  webLoadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  webLoadingText: {
+    fontSize: 18,
+    color: '#666',
+  },
+  webHelperSection: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 24,
+    marginBottom: 32,
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+  },
+  webHelperTitle: {
+    fontSize: 24,
+    color: '#24269B',
+    marginBottom: 16,
+  },
+  webHelperText: {
+    fontSize: 16,
+    lineHeight: 24,
+    marginBottom: 8,
+    color: '#444',
+  },
+  webTitle: {
+    fontSize: 32,
+    color: '#24269B',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  webCurrentPlanCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 24,
+    marginBottom: 32,
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+  },
+  webCurrentPlanTitle: {
+    fontSize: 20,
+    color: '#666',
+    marginBottom: 8,
+  },
+  webCurrentPlanName: {
+    fontSize: 24,
+    color: '#24269B',
+    fontWeight: '600',
+    marginBottom: 24,
+  },
+  webFeaturesTitle: {
+    fontSize: 18,
+    color: '#444',
+    marginBottom: 16,
+  },
+  webFeaturesList: {
+    marginBottom: 16,
+  },
+  webFeatureItem: {
+    fontSize: 16,
+    lineHeight: 24,
+    marginBottom: 8,
+    color: '#444',
+  },
+  webSectionTitle: {
+    fontSize: 24,
+    color: '#24269B',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  webPlansContainer: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gap: 24,
+    marginBottom: 40,
+  },
+  webPlanButton: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 24,
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    },
+    ':active': {
+      transform: 'translateY(1px)',
+    },
+  },
+  webPlanTitle: {
+    fontSize: 20,
+    color: '#24269B',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  webPlanPrice: {
+    fontSize: 24,
+    color: '#444',
+    marginBottom: 16,
+  },
+  webPlanDescription: {
+    fontSize: 16,
+    color: '#666',
+    lineHeight: 24,
   },
 });
 

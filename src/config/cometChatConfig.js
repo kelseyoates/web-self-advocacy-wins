@@ -1,6 +1,8 @@
+import ENV from './environment';
+
 export const COMETCHAT_CONSTANTS = {
-    APP_ID: process.env.COMETCHAT_APP_ID,
-    AUTH_KEY: process.env.COMETCHAT_AUTH_KEY,
-    API_KEY: process.env.COMETCHAT_API_KEY,
-    REGION: process.env.COMETCHAT_REGION,
+    APP_ID: ENV.COMETCHAT_APP_ID,
+    AUTH_KEY: ENV.COMETCHAT_AUTH_KEY,
+    API_KEY: ENV.COMETCHAT_API_KEY,
+    REGION: ENV.COMETCHAT_REGION,
 };

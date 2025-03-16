@@ -1,26 +1,100 @@
-import React from 'react';
-import { View, Text, StyleSheet, Switch, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Switch, Platform, Pressable, useWindowDimensions } from 'react-native';
 import { useAccessibility } from '../context/AccessibilityContext';
-
-const isWeb = Platform.OS === 'web';
 
 const AccessibilityScreen = () => {
   const { showHelpers, toggleHelpers } = useAccessibility();
+  const { width } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web';
+  const isMobile = width < 768;
+
+  // State for hover effects on web
+  const [hoverStates, setHoverStates] = useState({
+    helpersCard: false,
+    aboutCard: false,
+  });
+
+  // Function to handle keyboard navigation for web
+  useEffect(() => {
+    if (isWeb) {
+      const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && document.activeElement.id === 'helpers-switch') {
+          toggleHelpers();
+        }
+      };
+      
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [toggleHelpers, isWeb]);
+
+  // Apply styles based on platform and screen size
+  const containerStyle = [
+    styles.container,
+    isWeb && styles.webContainer,
+    isWeb && !isMobile && styles.webContainerDesktop
+  ];
+  
+  const contentWrapperStyle = [
+    styles.contentWrapper,
+    isWeb && styles.webContentWrapper
+  ];
+  
+  const pageTitleStyle = [
+    styles.pageTitle,
+    isWeb && styles.webPageTitle
+  ];
+  
+  const helpersCardStyle = [
+    styles.card,
+    isWeb && styles.webCard,
+    isWeb && hoverStates.helpersCard && styles.webCardHover
+  ];
+  
+  const aboutCardStyle = [
+    styles.card,
+    isWeb && styles.webCard,
+    isWeb && hoverStates.aboutCard && styles.webCardHover
+  ];
+  
+  const settingTitleStyle = [
+    styles.settingTitle,
+    isWeb && styles.webSettingTitle
+  ];
+  
+  const settingDescriptionStyle = [
+    styles.settingDescription,
+    isWeb && styles.webSettingDescription
+  ];
 
   return (
-    <View style={[styles.container, isWeb && styles.webContainer]}>
-      <View style={[styles.contentWrapper, isWeb && styles.webContentWrapper]}>
-        <Text style={[styles.pageTitle, isWeb && styles.webPageTitle]}>
+    <View style={containerStyle}>
+      <View style={contentWrapperStyle}>
+        <Text 
+          style={pageTitleStyle}
+          role={isWeb ? "heading" : undefined}
+          aria-level={isWeb ? 1 : undefined}
+        >
           Accessibility Settings
         </Text>
         
-        <View style={[styles.card, isWeb && styles.webCard]}>
+        <Pressable
+          style={helpersCardStyle}
+          onMouseEnter={isWeb ? () => setHoverStates(prev => ({...prev, helpersCard: true})) : undefined}
+          onMouseLeave={isWeb ? () => setHoverStates(prev => ({...prev, helpersCard: false})) : undefined}
+          accessible={true}
+          accessibilityRole="none"
+        >
           <View style={styles.settingContainer}>
             <View style={styles.textSection}>
-              <Text style={[styles.settingTitle, isWeb && styles.webSettingTitle]}>
+              <Text 
+                style={settingTitleStyle}
+                role={isWeb ? "heading" : undefined}
+                aria-level={isWeb ? 2 : undefined}
+              >
                 Show Helper Sections
               </Text>
-              <Text style={[styles.settingDescription, isWeb && styles.webSettingDescription]}>
+              <Text style={settingDescriptionStyle}>
                 Helper sections show you how to use different features in the app. 
                 Turn this off once you're comfortable with the app.
               </Text>
@@ -35,21 +109,42 @@ const AccessibilityScreen = () => {
                 accessible={true}
                 accessibilityLabel="Toggle helper sections"
                 accessibilityHint={`Double tap to ${showHelpers ? 'hide' : 'show'} helper sections`}
+                id={isWeb ? "helpers-switch" : undefined}
+                role={isWeb ? "switch" : undefined}
+                aria-checked={isWeb ? showHelpers : undefined}
+                tabIndex={isWeb ? 0 : undefined}
               />
             </View>
           </View>
-        </View>
+        </Pressable>
 
-        <View style={[styles.card, isWeb && styles.webCard]}>
-          <Text style={[styles.settingTitle, isWeb && styles.webSettingTitle]}>
+        <Pressable
+          style={aboutCardStyle}
+          onMouseEnter={isWeb ? () => setHoverStates(prev => ({...prev, aboutCard: true})) : undefined}
+          onMouseLeave={isWeb ? () => setHoverStates(prev => ({...prev, aboutCard: false})) : undefined}
+          accessible={true}
+          accessibilityRole="none"
+        >
+          <Text 
+            style={settingTitleStyle}
+            role={isWeb ? "heading" : undefined}
+            aria-level={isWeb ? 2 : undefined}
+          >
             About Accessibility
           </Text>
-          <Text style={[styles.settingDescription, isWeb && styles.webSettingDescription]}>
+          <Text style={settingDescriptionStyle}>
             We are committed to making Self-Advocacy Wins accessible to everyone. 
             Our app supports screen readers, keyboard navigation, and various other 
             accessibility features to ensure a great experience for all users.
           </Text>
-        </View>
+          {isWeb && (
+            <Text style={[settingDescriptionStyle, styles.webAdditionalInfo]}>
+              On the web, you can use keyboard navigation (Tab key) to move between elements,
+              and Enter key to activate buttons and toggles. Screen readers are fully supported,
+              and all interactive elements have proper ARIA attributes.
+            </Text>
+          )}
+        </Pressable>
       </View>
     </View>
   );
@@ -104,17 +199,40 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
     minHeight: '100vh',
   },
+  webContainerDesktop: {
+    paddingTop: 40,
+  },
   webContentWrapper: {
     maxWidth: 800,
-    margin: '0 auto',
-    padding: 40,
+    marginHorizontal: 'auto',
+    padding: Platform.OS === 'web' ? 40 : 20,
+    width: '100%',
   },
   webCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 24,
     marginBottom: 24,
-    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    transition: 'all 0.3s ease',
+    cursor: 'default',
+  },
+  webCardHover: {
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+    transform: [{translateY: -2}],
   },
   webPageTitle: {
     fontSize: 32,
@@ -127,6 +245,12 @@ const styles = StyleSheet.create({
   webSettingDescription: {
     fontSize: 16,
     lineHeight: 24,
+  },
+  webAdditionalInfo: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
   },
 });
 

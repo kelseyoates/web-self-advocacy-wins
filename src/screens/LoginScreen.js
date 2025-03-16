@@ -100,11 +100,12 @@ const LoginScreen = ({ navigation }) => {
       let cometChatSuccess = false;
       
       try {
-        if (isWeb) {
-          // For web, ensure WebSocket is enabled
-          await CometChat.enableWebSocket(true);
+        // Initialize CometChat if needed
+        if (!CometChat.isInitialized()) {
+          await CometChat.init(COMETCHAT_CONSTANTS.APP_ID);
         }
         
+        // Login to CometChat
         const user = await CometChat.login(uid, COMETCHAT_CONSTANTS.AUTH_KEY);
         console.log('CometChat login successful:', user);
         cometChatSuccess = true;

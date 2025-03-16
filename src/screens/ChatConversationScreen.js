@@ -13,7 +13,9 @@ import {
   Keyboard,
   Dimensions,
   ScrollView,
-  AccessibilityInfo
+  AccessibilityInfo,
+  Pressable,
+  useWindowDimensions
 } from 'react-native';
 // Conditional import based on platform
 const CometChat = Platform.OS === 'web' 
@@ -67,7 +69,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const flatListRef = useRef();
   const [isLoading, setIsLoading] = useState(false);
-  const { height: screenHeight } = Dimensions.get('window');
+  const { height: screenHeight, width: screenWidth } = useWindowDimensions();
   const [isUploading, setIsUploading] = useState(false);
   const [reportedUsers, setReportedUsers] = useState(new Set());
   const [smartReplies, setSmartReplies] = useState([]);
@@ -77,10 +79,30 @@ const ChatConversationScreen = ({ route, navigation }) => {
   const [hasShownBlockAlert, setHasShownBlockAlert] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [isCheckingBlock, setIsCheckingBlock] = useState(true);
+  const isMobile = screenWidth < 768;
 
-  // Add web-specific state and refs
+  // Web-specific state and refs
   const fileInputRef = useRef(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [isHoveredSend, setIsHoveredSend] = useState(false);
+  const [isHoveredAttach, setIsHoveredAttach] = useState(false);
+  
+  // Create responsive styles based on platform and screen size
+  const containerStyle = useMemo(() => [
+    styles.container,
+    isWeb && styles.webContainer,
+    isWeb && !isMobile && { maxWidth: 1200, marginHorizontal: 'auto' }
+  ], [isWeb, isMobile]);
+  
+  const messageListStyle = useMemo(() => [
+    styles.messageList,
+    isWeb && styles.webMessageList
+  ], [isWeb]);
+  
+  const inputContainerStyle = useMemo(() => [
+    styles.inputContainer,
+    isWeb && styles.webInputContainer
+  ], [isWeb]);
 
   // Fetch initial messages
   const fetchMessages = useCallback(async () => {
@@ -666,31 +688,56 @@ const ChatConversationScreen = ({ route, navigation }) => {
       hour: '2-digit',
       minute: '2-digit'
     });
+    
+    // For web, create a hover state
+    const [isHovered, setIsHovered] = useState(false);
+
+    // Create message container style with hover effect for web
+    const messageContainerStyle = [
+      styles.messageContainer,
+      isMyMessage ? styles.myMessage : styles.theirMessage,
+      isWeb && isHovered && styles.webMessageHover
+    ];
+
+    // Create message text style
+    const messageTextStyle = [
+      styles.messageText,
+      isMyMessage ? styles.myMessageText : styles.theirMessageText,
+      isWeb && styles.webMessageText
+    ];
+
+    // Create timestamp style
+    const timestampStyle = [
+      styles.timestamp,
+      isMyMessage ? styles.myTimestamp : styles.theirTimestamp,
+      isWeb && styles.webTimestamp
+    ];
 
     return (
-      <TouchableOpacity
+      <Pressable
         onLongPress={() => {
           console.log('Long press triggered');
           handleMessageLongPress(item);
         }}
+        onMouseEnter={isWeb ? () => setIsHovered(true) : undefined}
+        onMouseLeave={isWeb ? () => setIsHovered(false) : undefined}
         delayLongPress={500}
         accessible={true}
         accessibilityLabel={`${isMyMessage ? 'Your' : item.sender?.name + "'s"} message: ${item.text}. Sent at ${timestamp}. Long press for options.`}
         accessibilityHint="Double tap and hold to open message options"
+        style={({ pressed }) => [
+          isWeb && pressed && styles.webMessagePressed
+        ]}
       >
-        <View style={[
-          styles.messageContainer,
-          isMyMessage ? styles.myMessage : styles.theirMessage
-        ]}>
+        <View style={messageContainerStyle}>
           {!isMyMessage && (
-            <Text style={styles.senderName}>{item.sender?.name}</Text>
+            <Text style={[styles.senderName, isWeb && styles.webSenderName]}>
+              {item.sender?.name}
+            </Text>
           )}
           
           {item.type === 'text' && (
-            <Text style={[
-              styles.messageText,
-              isMyMessage ? styles.myMessageText : styles.theirMessageText
-            ]}>
+            <Text style={messageTextStyle}>
               {item.text}
             </Text>
           )}
@@ -698,19 +745,18 @@ const ChatConversationScreen = ({ route, navigation }) => {
           {item.type === 'image' && (
             <Image
               source={{ uri: item.data?.url }}
-              style={styles.messageImage}
+              style={[styles.messageImage, isWeb && styles.webMessageImage]}
               resizeMode="cover"
+              accessibilityLabel="Image message"
+              accessibilityRole="image"
             />
           )}
           
-          <Text style={[
-            styles.timestamp,
-            isMyMessage ? styles.myTimestamp : styles.theirTimestamp
-          ]}>
+          <Text style={timestampStyle}>
             {timestamp}
           </Text>
         </View>
-      </TouchableOpacity>
+      </Pressable>
     );
   };
 
@@ -920,7 +966,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
 
   const renderInputContainer = () => (
     <View 
-      style={styles.inputContainer}
+      style={inputContainerStyle}
       onDragOver={isWeb ? (e) => {
         e.preventDefault();
         setIsDraggingFile(true);
@@ -929,9 +975,19 @@ const ChatConversationScreen = ({ route, navigation }) => {
       onDrop={isWeb ? handleFileDrop : undefined}
     >
       <TouchableOpacity 
-        style={styles.attachButton} 
+        style={[
+          styles.attachButton, 
+          isWeb && styles.webAttachButton,
+          isWeb && isHoveredAttach && styles.webAttachButtonHover
+        ]} 
         onPress={handleMediaPicker}
+        onMouseEnter={isWeb ? () => setIsHoveredAttach(true) : undefined}
+        onMouseLeave={isWeb ? () => setIsHoveredAttach(false) : undefined}
         disabled={isBlocked || isUploading || isLoading}
+        accessibilityRole={isWeb ? "button" : undefined}
+        accessibilityLabel="Attach image"
+        accessibilityHint="Attach an image to your message"
+        aria-disabled={isWeb ? (isBlocked || isUploading || isLoading) : undefined}
       >
         <MaterialCommunityIcons 
           name="attachment" 
@@ -953,6 +1009,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
             }
             e.target.value = ''; // Reset input
           }}
+          aria-label="Upload image"
         />
       )}
 
@@ -960,19 +1017,39 @@ const ChatConversationScreen = ({ route, navigation }) => {
         style={[
           styles.input, 
           isBlocked && styles.disabledInput,
-          isDraggingFile && styles.dragOverInput
+          isDraggingFile && styles.dragOverInput,
+          isWeb && styles.webInput
         ]}
         value={inputText}
         onChangeText={setInputText}
         placeholder={isBlocked ? "User is blocked" : "Type a message..."}
         multiline
         editable={!isBlocked && !isLoading && !isUploading}
+        accessibilityLabel="Message input"
+        accessibilityHint="Type your message here"
+        aria-disabled={isWeb ? (isBlocked || isLoading || isUploading) : undefined}
+        onKeyPress={isWeb ? (e) => {
+          if (e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+          }
+        } : undefined}
       />
 
       <TouchableOpacity 
-        style={styles.sendButton} 
+        style={[
+          styles.sendButton,
+          isWeb && styles.webSendButton,
+          isWeb && isHoveredSend && !isBlocked && !isLoading && !isUploading && inputText.trim() && styles.webSendButtonHover
+        ]} 
         onPress={sendMessage}
+        onMouseEnter={isWeb ? () => setIsHoveredSend(true) : undefined}
+        onMouseLeave={isWeb ? () => setIsHoveredSend(false) : undefined}
         disabled={isBlocked || isLoading || isUploading || !inputText.trim()}
+        accessibilityRole={isWeb ? "button" : undefined}
+        accessibilityLabel="Send message"
+        accessibilityHint="Send your message"
+        aria-disabled={isWeb ? (isBlocked || isLoading || isUploading || !inputText.trim()) : undefined}
       >
         <MaterialCommunityIcons 
           name="send" 
@@ -985,7 +1062,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
 
   if (isBlocked) {
     return (
-      <View style={styles.container}>
+      <View style={containerStyle}>
         <Text style={styles.blockedMessage}>
           This user is blocked. Unblock them to send messages.
         </Text>
@@ -995,8 +1072,8 @@ const ChatConversationScreen = ({ route, navigation }) => {
 
   return (
     <KeyboardAvoidingView 
-      style={[styles.container, { height: screenHeight }]} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={[containerStyle, { height: isWeb ? '100vh' : screenHeight }]} 
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 150 : 0}
       accessible={true}
       accessibilityLabel="Chat conversation"
@@ -1006,7 +1083,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
         data={messages}
         renderItem={renderMessage}
         keyExtractor={item => item.id.toString()}
-        contentContainerStyle={styles.messageList}
+        contentContainerStyle={messageListStyle}
         accessibilityLabel={`${messages.length} messages`}
         accessibilityHint="Scroll to read messages"
         onContentSizeChange={() => {
@@ -1015,7 +1092,7 @@ const ChatConversationScreen = ({ route, navigation }) => {
           }
         }}
         ListEmptyComponent={() => (
-          <Text style={styles.emptyText}>No messages yet</Text>
+          <Text style={[styles.emptyText, isWeb && styles.webEmptyText]}>No messages yet</Text>
         )}
       />
       
@@ -1185,6 +1262,78 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
     height: 'auto',
     objectFit: 'contain',
+  },
+  webContainer: {
+    backgroundColor: '#f9f9f9',
+    minHeight: '100vh',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  webMessageList: {
+    flex: 1,
+    padding: 20,
+  },
+  webInputContainer: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    backgroundColor: '#fff',
+    boxShadow: '0 -2px 10px rgba(0,0,0,0.05)',
+  },
+  webAttachButton: {
+    cursor: 'pointer',
+    borderRadius: 8,
+    padding: 12,
+    transition: 'background-color 0.2s ease',
+  },
+  webAttachButtonHover: {
+    backgroundColor: 'rgba(36, 38, 155, 0.1)',
+  },
+  webSendButton: {
+    cursor: 'pointer',
+    borderRadius: 8,
+    padding: 12,
+    transition: 'background-color 0.2s ease',
+  },
+  webSendButtonHover: {
+    backgroundColor: 'rgba(36, 38, 155, 0.1)',
+  },
+  webInput: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    lineHeight: 1.5,
+    outlineColor: '#24269B',
+    transition: 'border-color 0.2s ease',
+    borderRadius: 24,
+  },
+  webEmptyText: {
+    fontSize: 16,
+    color: '#757575',
+    padding: 40,
+  },
+  webMessageHover: {
+    boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
+    transform: [{translateY: -1}],
+  },
+  webMessagePressed: {
+    opacity: 0.9,
+  },
+  webSenderName: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  webMessageImage: {
+    maxWidth: 300,
+    maxHeight: 300,
+    borderRadius: 12,
+  },
+  webTimestamp: {
+    fontSize: 12,
+  },
+  webMessageText: {
+    fontSize: 16,
+    lineHeight: 1.4,
   },
 });
 

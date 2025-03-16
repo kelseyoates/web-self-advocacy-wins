@@ -6,7 +6,8 @@ import {
   TouchableOpacity, 
   Image,
   AccessibilityInfo,
-  ScrollView 
+  ScrollView,
+  Platform 
 } from 'react-native';
 import { auth, db } from '../config/firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -17,6 +18,7 @@ const FindScreen = ({ navigation }) => {
   const [userData, setUserData] = useState(null);
   const [isScreenReaderEnabled, setIsScreenReaderEnabled] = useState(false);
   const { showHelpers } = useAccessibility();
+  const isWeb = Platform.OS === 'web';
 
   // Add screen reader detection
   useEffect(() => {
@@ -65,23 +67,23 @@ const FindScreen = ({ navigation }) => {
 
   return (
     <ScrollView 
-      style={styles.scrollContainer}
-      contentContainerStyle={styles.contentContainer}
+      style={[styles.scrollContainer, isWeb && styles.webScrollContainer]}
+      contentContainerStyle={[styles.contentContainer, isWeb && styles.webContentContainer]}
       accessible={true}
       accessibilityLabel="Find Screen"
       accessibilityRole="menu"
     >
-      <View style={styles.container}>
+      <View style={[styles.container, isWeb && styles.webContainer]}>
         {showHelpers && (
           <View 
-            style={styles.helperSection}
+            style={[styles.helperSection, isWeb && styles.webHelperSection]}
             accessible={true}
             accessibilityRole="header"
             accessibilityLabel={`Welcome to Find! Here's what you can do: 
               Find a Friend is free! Connect with other self-advocates by tapping the Find a Friend button. 
               Find a Date requires an upgrade to access dating features. Use this feature by tapping the Find a Date button, which is below the Find a Friend button.`}
           >
-            <View style={styles.helperHeader}>
+            <View style={[styles.helperHeader, isWeb && styles.webHelperHeader]}>
               <MaterialCommunityIcons 
                 name="information" 
                 size={24} 
@@ -90,18 +92,18 @@ const FindScreen = ({ navigation }) => {
                 importantForAccessibility="no"
               />
             </View>
-            <View style={styles.helperContent}>
+            <View style={[styles.helperContent, isWeb && styles.webHelperContent]}>
               <Image 
                 source={require('../../assets/ezra-usercards.png')}
-                style={styles.helperImage}
+                style={[styles.helperImage, isWeb && styles.webHelperImage]}
                 importantForAccessibility="no"
               />
-              <Text style={styles.helperTitle}>Welcome to Find!</Text>
+              <Text style={[styles.helperTitle, isWeb && styles.webHelperTitle]}>Welcome to Find!</Text>
               <View style={styles.helperTextContainer}>
-                <Text style={styles.helperText}>
+                <Text style={[styles.helperText, isWeb && styles.webHelperText]}>
                   • Find a Friend is free! Connect with other self-advocates
                 </Text>
-                <Text style={styles.helperText}>
+                <Text style={[styles.helperText, isWeb && styles.webHelperText]}>
                   • Find a Date requires an upgrade to access dating features
                 </Text>
               </View>
@@ -109,10 +111,10 @@ const FindScreen = ({ navigation }) => {
           </View>
         )}
 
-        <View style={styles.buttonContainer}>
-          <View style={styles.buttonShadow} />
+        <View style={[styles.buttonContainer, isWeb && styles.webButtonContainer]}>
+          <View style={[styles.buttonShadow, isWeb && styles.webButtonShadow]} />
           <TouchableOpacity 
-            style={styles.findFriendButton} 
+            style={[styles.findFriendButton, isWeb && styles.webFindFriendButton]} 
             onPress={() => {
               announceToScreenReader('Opening Find a Friend screen');
               navigation.navigate('FindYourFriends');
@@ -123,15 +125,15 @@ const FindScreen = ({ navigation }) => {
             accessibilityRole="button"
           >
             <View 
-              style={styles.buttonContent}
+              style={[styles.buttonContent, isWeb && styles.webButtonContent]}
               accessible={true}
               accessibilityElementsHidden={true}
               importantForAccessibility="no-hide-descendants"
             >
-              <Text style={styles.buttonText}>Find a Friend</Text>
+              <Text style={[styles.buttonText, isWeb && styles.webButtonText]}>Find a Friend</Text>
               <Image 
                 source={require('../../assets/friends-icon.png')} 
-                style={styles.buttonIcon}
+                style={[styles.buttonIcon, isWeb && styles.webButtonIcon]}
                 accessible={true}
                 accessibilityLabel="three friends together in a group"
                 accessibilityRole="image"
@@ -140,10 +142,10 @@ const FindScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.buttonContainer}>
-          <View style={styles.buttonShadow} />
+        <View style={[styles.buttonContainer, isWeb && styles.webButtonContainer]}>
+          <View style={[styles.buttonShadow, isWeb && styles.webButtonShadow]} />
           <TouchableOpacity 
-            style={styles.findDateButton} 
+            style={[styles.findDateButton, isWeb && styles.webFindDateButton]} 
             onPress={() => {
               announceToScreenReader('Opening Find a Date screen');
               navigation.navigate('FindADate');
@@ -154,15 +156,15 @@ const FindScreen = ({ navigation }) => {
             accessibilityRole="button"
           >
             <View 
-              style={styles.buttonContent}
+              style={[styles.buttonContent, isWeb && styles.webButtonContent]}
               accessible={true}
               accessibilityElementsHidden={true}
               importantForAccessibility="no-hide-descendants"
             >
-              <Text style={styles.buttonDateText}>Find a Date</Text>
+              <Text style={[styles.buttonDateText, isWeb && styles.webButtonDateText]}>Find a Date</Text>
               <Image 
                 source={require('../../assets/dating-icon.png')} 
-                style={styles.buttonIcon}
+                style={[styles.buttonIcon, isWeb && styles.webButtonIcon]}
                 accessible={true}
                 accessibilityLabel="two people chatting on their phones"
                 accessibilityRole="image"
@@ -344,6 +346,127 @@ const styles = StyleSheet.create({
     height: 150,
     resizeMode: 'contain',
     marginBottom: 10,
+  },
+
+  webScrollContainer: {
+    backgroundColor: '#f5f5f5',
+  },
+  webContentContainer: {
+    maxWidth: 1200,
+    marginHorizontal: 'auto',
+    paddingTop: 40,
+    paddingBottom: 60,
+  },
+  webContainer: {
+    paddingHorizontal: 40,
+  },
+  webHelperSection: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+    padding: 24,
+    marginBottom: 40,
+    maxWidth: 800,
+    width: '100%',
+    transition: 'transform 0.2s ease-in-out',
+    cursor: 'default',
+    ':hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    },
+  },
+  webHelperHeader: {
+    marginBottom: 16,
+  },
+  webHelperContent: {
+    alignItems: 'center',
+  },
+  webHelperImage: {
+    width: '100%',
+    maxWidth: 400,
+    height: 'auto',
+    marginBottom: 24,
+    borderRadius: 8,
+  },
+  webHelperTitle: {
+    fontSize: 28,
+    marginBottom: 16,
+    color: '#24269B',
+  },
+  webHelperText: {
+    fontSize: 18,
+    lineHeight: 28,
+    marginBottom: 8,
+  },
+  webButtonContainer: {
+    width: '100%',
+    maxWidth: 600,
+    marginBottom: 24,
+  },
+  webButtonShadow: {
+    boxShadow: '4px 4px 0px rgba(0, 0, 0, 0.8)',
+    borderRadius: 12,
+  },
+  webFindFriendButton: {
+    backgroundColor: '#24269B',
+    borderRadius: 12,
+    padding: 24,
+    width: '100%',
+    height: 140,
+    transition: 'all 0.2s ease-in-out',
+    cursor: 'pointer',
+    ':hover': {
+      transform: 'translateY(-2px)',
+      backgroundColor: '#2F31B5',
+    },
+    ':active': {
+      transform: 'translateY(1px)',
+    },
+    ':focus': {
+      outline: '3px solid #4A4CB8',
+      outlineOffset: 2,
+    },
+  },
+  webFindDateButton: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 24,
+    width: '100%',
+    height: 140,
+    transition: 'all 0.2s ease-in-out',
+    cursor: 'pointer',
+    ':hover': {
+      transform: 'translateY(-2px)',
+      backgroundColor: '#f8f8f8',
+    },
+    ':active': {
+      transform: 'translateY(1px)',
+    },
+    ':focus': {
+      outline: '3px solid #24269B',
+      outlineOffset: 2,
+    },
+  },
+  webButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 8,
+  },
+  webButtonText: {
+    fontSize: 28,
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  webButtonDateText: {
+    fontSize: 28,
+    color: '#000000',
+    fontWeight: '600',
+  },
+  webButtonIcon: {
+    width: 48,
+    height: 48,
+    marginLeft: 16,
   },
 });
 

@@ -230,6 +230,26 @@ const MainScreen = ({ navigation }) => {
     };
   }, []);
 
+  const renderHelperSection = () => (
+    <View style={[styles.headerContent, isWeb && styles.webHeaderContent]}>
+      <Image 
+        source={require('../../assets/wins.png')} 
+        style={[styles.headerImage, isWeb && styles.webHeaderImage]}
+        resizeMode="contain"
+        accessible={true}
+        accessibilityLabel="Three self-advocates holding a trophy, a flag, and a medal"
+      />
+      <View style={styles.textContainer}>
+        <Text style={[styles.headerText, isWeb && styles.webHeaderText]}>
+          Welcome to Self-Advocacy Wins!
+        </Text>
+        <Text style={[styles.bodyText, isWeb && styles.webBodyText]}>
+          You are now on the Home feed. This is where you can see what your friends have posted.
+        </Text>
+      </View>
+    </View>
+  );
+
   if (loading) {
     return (
       <View 
@@ -316,23 +336,7 @@ const MainScreen = ({ navigation }) => {
           </View>
         ) : null}
         
-        {showHelpers && (
-          <View style={[styles.headerContent, isWeb && styles.webHeaderContent]}>
-            <Image 
-              source={require('../../assets/wins.png')} 
-              style={[styles.headerImage, isWeb && styles.webHeaderImage]}
-              resizeMode="contain"
-              accessible={true}
-              accessibilityLabel="Three self-advocates holding a trophy, a flag, and a medal"
-            />
-            <Text style={[styles.headerText, isWeb && styles.webHeaderText]}>
-              Welcome to Self-Advocacy Wins!
-            </Text>
-            <Text style={[styles.bodyText, isWeb && styles.webBodyText]}>
-              You are now on the Home feed. This is where you can see what your friends have posted.
-            </Text>
-          </View>
-        )}
+        {showHelpers && renderHelperSection()}
 
         {wins.map(win => (
           <View 
@@ -390,21 +394,7 @@ const MainScreen = ({ navigation }) => {
             accessibilityRole="adjustable"
           />
         }
-        ListHeaderComponent={() => showHelpers && (
-          <View style={styles.headerContent}>
-            <Image 
-              source={require('../../assets/wins.png')} 
-              style={styles.headerImage}
-              resizeMode="contain"
-              accessible={true}
-              accessibilityLabel="Three self-advocates holding a trophy, a flag, and a medal"
-            />
-            <Text style={styles.headerText}>Welcome to Self-Advocacy Wins!</Text>
-            <Text style={styles.bodyText}>
-              You are now on the Home feed. This is where you can see what your friends have posted.
-            </Text>
-          </View>
-        )}
+        ListHeaderComponent={() => showHelpers && renderHelperSection()}
         contentContainerStyle={styles.listContent}
       />
     );
@@ -473,52 +463,63 @@ const styles = StyleSheet.create({
   webMenuText: {
     fontSize: 14,
   },
+  textContainer: {
+    width: '100%',
+    flexDirection: 'column',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginTop: 10,
+  },
   headerContent: {
     flexDirection: 'column',
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    paddingHorizontal: 5,
-    paddingVertical: 5,
+    padding: 24,
     marginBottom: 20,
     borderRadius: 8,
+    width: '100%',
   },
   webHeaderContent: {
     maxWidth: 800,
     marginHorizontal: 'auto',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    padding: 20,
   },
   headerImage: {
-    width: 300,
+    width: '100%',
+    maxWidth: 300,
     height: 200,
     resizeMode: 'contain',
-    marginBottom: 10,
+    marginBottom: 24,
   },
   webHeaderImage: {
-    width: '100%',
-    maxWidth: 500,
-    height: 300,
+    maxWidth: 400,
+    height: 250,
     objectFit: 'contain',
   },
   headerText: {
     fontSize: 24,
     fontWeight: '600',
     color: '#24269B',
-    marginBottom: 10,
+    marginBottom: 20,
     textAlign: 'center',
+    width: '100%',
+    display: 'block',
   },
   webHeaderText: {
-    fontSize: 32,
+    fontSize: 28,
+    lineHeight: 1.4,
   },
   bodyText: {
     fontSize: 16,
     color: '#333',
     textAlign: 'center',
-    marginBottom: 10,
+    marginTop: 10,
+    width: '100%',
+    display: 'block',
   },
   webBodyText: {
     fontSize: 18,
-    lineHeight: 1.5,
+    lineHeight: 1.6,
   },
   winCardContainer: {
     marginBottom: 10,

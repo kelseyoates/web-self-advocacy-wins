@@ -11,14 +11,53 @@ import {
   AccessibilityInfo,
   Keyboard,
   Animated,
-  Button
+  Button,
+  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { auth } from '../config/firebase';
 import StateDropdown from '../components/StateDropdown';
 import { questions } from '../constants/questions';
 import Typesense from 'typesense';
+import debounce from 'lodash/debounce';
+
+// Add web-specific styles
+const webStyles = {
+  container: {
+    maxWidth: 1200,
+    marginHorizontal: 'auto',
+    width: '100%',
+    padding: 20,
+  },
+  button: {
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    ':hover': {
+      opacity: 0.9,
+    },
+  },
+  input: {
+    outlineColor: '#24269B',
+  },
+  card: {
+    cursor: 'pointer',
+    transition: 'transform 0.2s ease',
+    ':hover': {
+      transform: 'translateY(-4px)',
+    },
+  },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gap: 20,
+  },
+};
 
 const FindYourFriendsScreen = ({ navigation }) => {
+  const { width } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web';
+  const isMobile = width < 768;
+
   const [selectedWords, setSelectedWords] = useState([]);
   const [textAnswer, setTextAnswer] = useState('');
   const [selectedState, setSelectedState] = useState('');
@@ -87,13 +126,38 @@ const FindYourFriendsScreen = ({ navigation }) => {
     });
   };
 
-  // Search function
+  // Add debounced search for web
+  const debouncedSearch = useRef(
+    Platform.select({
+      web: debounce(searchUsers, 500),
+      default: searchUsers
+    })
+  ).current;
+
+  // Add error boundary for web
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      window.addEventListener('error', handleError);
+      return () => window.removeEventListener('error', handleError);
+    }
+  }, []);
+
+  const handleError = (error) => {
+    console.error('Error in FindYourFriendsScreen:', error);
+    setError('Something went wrong. Please try again.');
+    setLoading(false);
+  };
+
+  // Optimize search for web
   const searchUsers = async () => {
     if (!currentUser) return;
     
     try {
       setLoading(true);
       setError(null);
+
+      // Add loading state announcement for screen readers
+      announceToScreenReader('Searching for friends...');
       
       // Debug logs
       console.log("Debug - Current User Info:", {
@@ -104,7 +168,6 @@ const FindYourFriendsScreen = ({ navigation }) => {
 
       let filterBy = `age_sort:>=${parseInt(selectedAgeRange.min) || 18} && age_sort:<=${parseInt(selectedAgeRange.max) || 99} && id:!=${currentUser.uid.toLowerCase()}`;
       
-      // Add state filter if a state is selected
       if (selectedState && selectedState !== 'Anywhere') {
         filterBy += ` && state:=${selectedState}`;
       }
@@ -113,7 +176,7 @@ const FindYourFriendsScreen = ({ navigation }) => {
         searches: [{
           q: '*',
           query_by: 'username,state,questionAnswers.textAnswer,questionAnswers.selectedWords,winTopics',
-          per_page: 50,
+          per_page: Platform.OS === 'web' ? 24 : 50, // Limit results on web for better performance
           collection: 'users',
           filter_by: filterBy
         }]
@@ -121,17 +184,13 @@ const FindYourFriendsScreen = ({ navigation }) => {
 
       if (textAnswer && textAnswer.trim()) {
         searchParameters.searches[0].q = textAnswer.trim();
-        // Change query_by to prioritize winTopics
         searchParameters.searches[0].query_by = 'winTopics,questionAnswers.textAnswer';
-        // Add weight to prioritize winTopics matches
         searchParameters.searches[0].query_by_weights = '2,1';
       } else if (selectedWords && selectedWords.length > 0) {
         const wordSearchString = selectedWords.join(' ');
         searchParameters.searches[0].q = wordSearchString;
         searchParameters.searches[0].query_by = 'questionAnswers.selectedWords';
       }
-
-      console.log('Search parameters:', JSON.stringify(searchParameters));
 
       const response = await fetch(
         'https://e6dqryica24hsu75p-1.a1.typesense.net/multi_search',
@@ -145,8 +204,11 @@ const FindYourFriendsScreen = ({ navigation }) => {
         }
       );
 
+      if (!response.ok) {
+        throw new Error('Search request failed');
+      }
+
       const results = await response.json();
-      console.log('Raw Typesense response:', JSON.stringify(results, null, 2));
 
       if (results.results && results.results[0] && results.results[0].hits) {
         if (results.results[0].hits.length === 0) {
@@ -176,6 +238,20 @@ const FindYourFriendsScreen = ({ navigation }) => {
       setLoading(false);
     }
   };
+
+  // Add keyboard handling for web
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      const handleKeyPress = (e) => {
+        if (e.key === 'Enter' && e.ctrlKey) {
+          debouncedSearch();
+        }
+      };
+      
+      window.addEventListener('keydown', handleKeyPress);
+      return () => window.removeEventListener('keydown', handleKeyPress);
+    }
+  }, [debouncedSearch]);
 
   const handleMinAgeChange = (text) => {
     // Just update the text without any validation
@@ -276,9 +352,40 @@ const FindYourFriendsScreen = ({ navigation }) => {
     );
   };
 
+  // Update containerStyle to use web styles
+  const containerStyle = [
+    styles.container,
+    isWeb && !isMobile && webStyles.container,
+  ];
+
+  // Update button styles for web
+  const buttonStyle = [
+    styles.wordButton,
+    isWeb && webStyles.button,
+  ];
+
+  // Update input styles for web
+  const inputStyle = [
+    styles.textInput,
+    isWeb && webStyles.input,
+  ];
+
+  // Update card styles for web
+  const cardStyle = [
+    styles.userCard,
+    isWeb && webStyles.card,
+  ];
+
+  // Update results container style for web
+  const resultsStyle = [
+    styles.resultsContainer,
+    isWeb && !isMobile && webStyles.grid,
+  ];
+
   return (
     <ScrollView 
-      style={styles.container}
+      style={containerStyle}
+      contentContainerStyle={styles.scrollContent}
       accessible={true}
       accessibilityLabel="Find Friends Screen"
     >
@@ -412,7 +519,7 @@ const FindYourFriendsScreen = ({ navigation }) => {
       >
         <Text style={styles.sectionTitle}>Search by Text</Text>
         <TextInput
-          style={styles.textInput}
+          style={inputStyle}
           placeholder="Enter text to search..."
           value={textAnswer}
           onChangeText={setTextAnswer}
@@ -460,10 +567,7 @@ const FindYourFriendsScreen = ({ navigation }) => {
                   {question.words.map((word) => (
                     <TouchableOpacity
                       key={word}
-                      style={[
-                        styles.wordButton,
-                        selectedWords.includes(word) && styles.selectedWord
-                      ]}
+                      style={buttonStyle}
                       onPress={() => toggleWord(word)}
                       accessible={true}
                       accessibilityLabel={`${word}, ${selectedWords.includes(word) ? 'selected' : 'not selected'}`}
@@ -516,10 +620,10 @@ const FindYourFriendsScreen = ({ navigation }) => {
       </View>
       <ArrowAnimation />
 
-      <View style={styles.resultsContainer}>
+      <View style={resultsStyle}>
         
         {users.map(user => (
-          <View key={user.objectID} style={styles.cardContainer}>
+          <View key={user.objectID} style={cardStyle}>
             <View style={styles.cardShadow} />
             <TouchableOpacity 
               style={styles.userCard}
@@ -562,8 +666,8 @@ const FindYourFriendsScreen = ({ navigation }) => {
 
       <View style={styles.searchButtonContainer}>
         <TouchableOpacity 
-          style={styles.searchButton}
-          onPress={searchUsers}
+          style={buttonStyle}
+          onPress={debouncedSearch}
           disabled={loading}
         >
           <Text style={styles.searchButtonText}>
@@ -589,10 +693,16 @@ const FindYourFriendsScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  scrollContent: {
+    flexGrow: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#f6fbfd',
-    padding: 15,
+    padding: Platform.select({
+      web: 0,
+      default: 15,
+    }),
   },
   
   questionCard: {
@@ -601,6 +711,15 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     borderWidth: 1,
     borderColor: '#24269B',
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   
   question: {
@@ -636,22 +755,39 @@ const styles = StyleSheet.create({
   wordsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    marginHorizontal: -4, // Negative margin to offset child margins
     marginTop: 8,
   },
+  
   wordButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    // borderRadius: 20,
     backgroundColor: '#f6fbfd',
     borderWidth: 1,
     borderColor: '#000000',
-
     borderRadius: 10,
-    boxShadow: '0.3rem 0.3rem 0.6rem var(--greyLight-2), -0.2rem -0.2rem 0.5rem var(--white)',
-    display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    margin: 4,
+    ...Platform.select({
+      web: {
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        ':hover': {
+          backgroundColor: '#e6e6e6',
+        },
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+      },
+    }),
   },
   selectedWord: {
     backgroundColor: '#24269B',
@@ -670,16 +806,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 15,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 0,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 5,
     borderWidth: 1,
     borderColor: '#24269B',
+    ...Platform.select({
+      web: {
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+        transition: 'transform 0.2s ease',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+      },
+    }),
   },
 
   buttonShadow: {
@@ -759,26 +903,33 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     minHeight: 100,
     textAlignVertical: 'top',
+    ...Platform.select({
+      web: {
+        outlineColor: '#24269B',
+      },
+    }),
   },
   wordsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    marginHorizontal: -5, // Negative margin to offset child margins
+  },
+  searchButtonContainer: {
+    padding: 20,
+    alignItems: 'center',
   },
   searchButton: {
     backgroundColor: '#24269B',
-    borderRadius: 5,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    height: 70,
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    borderRadius: 25,
+    width: '80%',
   },
   searchButtonText: {
-    color: '#fff',
-    fontSize: 16,
+    color: 'white',
+    fontSize: 18,
     fontWeight: 'bold',
+    textAlign: 'center',
   },
   userInfo: {
     flex: 1,
@@ -929,23 +1080,6 @@ const styles = StyleSheet.create({
     color: '#24269B',
     textAlign: 'center',
   },
-  searchButtonContainer: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  searchButton: {
-    backgroundColor: '#24269B',
-    paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderRadius: 25,
-    width: '80%',
-  },
-  searchButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
   loadingContainer: {
     padding: 20,
     alignItems: 'center',
@@ -983,6 +1117,48 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '500',
+  },
+  '@media (min-width: 768px)': {
+    wordButton: {
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+      margin: 5,
+    },
+    searchButton: {
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+    },
+    userCard: {
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+    }
+  },
+  '@media (hover: hover)': {
+    wordButton: {
+      ':hover': {
+        transform: 'translateY(-1px)',
+        shadowOffset: {
+          width: 0,
+          height: 3,
+        },
+        shadowOpacity: 0.2,
+      }
+    },
+    searchButton: {
+      ':hover': {
+        opacity: 0.9,
+      }
+    },
+    userCard: {
+      ':hover': {
+        transform: 'translateY(-2px)',
+        shadowOffset: {
+          width: 0,
+          height: 4,
+        },
+        shadowOpacity: 0.2,
+      }
+    }
   },
 });
 

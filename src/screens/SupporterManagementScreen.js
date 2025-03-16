@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, Image, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, Image, FlatList, Platform } from 'react-native';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -92,6 +92,8 @@ const SupporterManagementScreen = () => {
       const user = auth.currentUser;
       if (!user) return;
 
+      setLoading(true); // Add loading state while removing
+
       const lowercaseUid = user.uid.toLowerCase();
       const userRef = doc(db, 'users', lowercaseUid);
 
@@ -101,27 +103,8 @@ const SupporterManagementScreen = () => {
         throw new Error('User document not found');
       }
 
-      // Get the supporter's current profile picture
-      const supporterDoc = await getDoc(doc(db, 'users', supporter.id.toLowerCase()));
-      let updatedSupporters = userData.supporters;
-      
-      if (supporterDoc.exists()) {
-        const supporterData = supporterDoc.data();
-        // Update the supporter's info with their current data
-        updatedSupporters = userData.supporters.map(s => {
-          if (s.id === supporter.id) {
-            return {
-              ...s,
-              profilePicture: supporterData.profilePicture,
-              username: supporterData.username || s.username,
-            };
-          }
-          return s;
-        });
-      }
-
       // Filter out the removed supporter
-      updatedSupporters = updatedSupporters.filter(s => s.id !== supporter.id);
+      const updatedSupporters = userData.supporters.filter(s => s.id.toLowerCase() !== supporter.id.toLowerCase());
 
       // Update Firestore
       await updateDoc(userRef, {
@@ -134,10 +117,19 @@ const SupporterManagementScreen = () => {
         supporters: updatedSupporters
       }));
 
+      // Show success message
+      Alert.alert(
+        'Success',
+        'Supporter removed successfully',
+        [{ text: 'OK' }]
+      );
+
       console.log('Supporter removed successfully');
     } catch (error) {
       console.error('Error removing supporter:', error);
       Alert.alert('Error', 'Failed to remove supporter. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -183,7 +175,7 @@ const SupporterManagementScreen = () => {
 
   return (
     <FlatList
-      style={styles.container}
+      style={[styles.container, Platform.OS === 'web' && styles.webContainer]}
       contentContainerStyle={styles.listContainer}
       ListHeaderComponent={() => (
         <View style={styles.content}>
@@ -267,29 +259,61 @@ const SupporterManagementScreen = () => {
               )}
               <Text style={styles.supporterEmail}>{supporter.email}</Text>
             </View>
-            <TouchableOpacity 
-              style={styles.removeButton}
-              onPress={() => {
-                Alert.alert(
-                  'Remove Supporter',
-                  `Are you sure you want to remove ${supporter.username || supporter.name}?`,
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { 
-                      text: 'Remove',
-                      style: 'destructive',
-                      onPress: () => handleRemoveSupporter(supporter)
-                    }
-                  ]
-                );
-              }}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel={`Remove ${supporter.username || supporter.name || 'Unknown'}`}
-              accessibilityHint="Double tap to remove this supporter"
-            >
-              <Text style={styles.removeButtonText}>Remove</Text>
-            </TouchableOpacity>
+            {Platform.OS === 'web' ? (
+              <div
+                onClick={() => {
+                  Alert.alert(
+                    'Remove Supporter',
+                    `Are you sure you want to remove ${supporter.username || supporter.name}?`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { 
+                        text: 'Remove',
+                        style: 'destructive',
+                        onPress: () => handleRemoveSupporter(supporter)
+                      }
+                    ]
+                  );
+                }}
+                style={{
+                  backgroundColor: '#ff4444',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  marginLeft: '8px',
+                  cursor: 'pointer',
+                }}
+                role="button"
+                aria-label={`Remove ${supporter.username || supporter.name || 'Unknown'}`}
+              >
+                <span style={{ color: '#fff', fontSize: '14px', fontWeight: '500' }}>
+                  Remove
+                </span>
+              </div>
+            ) : (
+              <TouchableOpacity 
+                style={styles.removeButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Remove Supporter',
+                    `Are you sure you want to remove ${supporter.username || supporter.name}?`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { 
+                        text: 'Remove',
+                        style: 'destructive',
+                        onPress: () => handleRemoveSupporter(supporter)
+                      }
+                    ]
+                  );
+                }}
+                accessible={true}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${supporter.username || supporter.name || 'Unknown'}`}
+                accessibilityHint="Double tap to remove this supporter"
+              >
+                <Text style={styles.removeButtonText}>Remove</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       )}
@@ -439,6 +463,9 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     paddingHorizontal: 16,
+  },
+  webContainer: {
+    // Add any specific styles for web if needed
   },
 });
 
